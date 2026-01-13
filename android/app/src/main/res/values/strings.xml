@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">aquaflow</string>
+    <string name="title_activity_main">aquaflow</string>
+    <string name="package_name">com.aquaflow.app</string>
+    <string name="custom_url_scheme">com.aquaflow.app</string>
+</resources>
