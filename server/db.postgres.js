@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 // PRODUCTION CONFIGURATION
 // In production, use environment variables: process.env.DATABASE_URL
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/aquaflow',
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/panigadi',
 });
 
 const initDb = async () => {

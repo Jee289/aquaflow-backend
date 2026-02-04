@@ -70,9 +70,9 @@ router.get('/configs', async (req, res) => {
     }
 });
 
-// Get Orders (Filter by User or Admin)
+// Get Orders (Filter by User, Admin, or Assigned Agent)
 router.get('/orders', async (req, res) => {
-    const { userId, district } = req.query;
+    const { userId, district, assignedAgentId } = req.query;
     let sql = "SELECT * FROM orders";
     let params = [];
 
@@ -80,8 +80,21 @@ router.get('/orders', async (req, res) => {
         sql += " WHERE userId = $1";
         params = [userId];
     } else if (district) {
-        sql += " WHERE district = $1";
-        params = [district];
+        // If assignedAgentId is provided, we might want to filter by that too
+        // But typically for Agent View:
+        // 1. "My Tasks": assignedAgentId = ME
+        // 2. "Pool": district = MY_DISTRICT AND assignedAgentId IS NULL
+
+        if (assignedAgentId) {
+            sql += " WHERE district = $1 AND assignedAgentId = $2";
+            params = [district, assignedAgentId];
+        } else {
+            // General district fetch (Admin view or Pool view depending on frontend logic)
+            // If frontend wants pool, it should probably filter client side or we add a query param 'unassigned=true'
+            // For now, let's return all district orders and let frontend filter, OR support specific query
+            sql += " WHERE district = $1";
+            params = [district];
+        }
     }
     sql += " ORDER BY timestamp DESC";
 
@@ -102,119 +115,148 @@ router.get('/orders', async (req, res) => {
 // Create Order
 router.post('/orders', async (req, res) => {
     const order = req.body;
-    console.log(`[Data] Creating order ${order.id} for user ${order.userId} - Method: ${order.paymentMethod}`);
+
+    // Zone Detection & Auto-Assignment (if enabled)
+    try {
+        const { zone, agentId } = await detectZoneAndAssign(order);
+        if (zone) order.detectedZone = zone;
+        if (agentId && !order.assignedAgentId) {
+            // Only auto-assign if not manually assigned
+            order.assignedAgentId = agentId;
+            console.log(`[Auto-Assign] Order ${order.id} → Zone: ${zone}, Agent: ${agentId}`);
+        }
+    } catch (e) {
+        console.error('Zone detection failed:', e.message);
+        // Continue without zone assignment
+    }
+
+    const sql = `INSERT INTO orders (
+        id, userId, userName, userPhone, totalAmount, status, deliveryDate,
+        district, state, city, items, address, paymentMethod, deliveryCharge,
+        barrelReturns, timestamp, assignedAgentId, detectedZone
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`;
+
+    const values = [
+        order.id, order.userId, order.userName, order.userPhone,
+        order.totalAmount, order.status || 'pending', order.deliveryDate,
+        order.district, order.state, order.city,
+        JSON.stringify(order.items), JSON.stringify(order.address),
+        order.paymentMethod, order.deliveryCharge || 0,
+        order.barrelReturns || 0, order.timestamp || Date.now(),
+        order.assignedAgentId || null, order.detectedZone || null
+    ];
 
     try {
-        await db.query(
-            "INSERT INTO orders (id, userId, userName, userPhone, totalAmount, status, deliveryDate, district, items, address, paymentMethod, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-            [
-                order.id, order.userId, order.userName, order.userPhone, order.totalAmount,
-                order.status, order.deliveryDate, order.district,
-                JSON.stringify(order.items), JSON.stringify(order.address), // Safe to stringify for JSONB
-                order.paymentMethod, order.timestamp
-            ]
-        );
+        const { rows } = await db.query(sql, values);
+        res.json(rows[0]);
+    } catch (err) {
+        console.error('Order creation error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
 
-        console.log(`[Data] Order ${order.id} created successfully`);
+// Update Order Status & Assignment
+router.patch('/orders/:id', async (req, res) => {
+    const { status, assignedAgentId } = req.body;
+    try {
+        // Fetch original order
+        const { rows } = await db.query("SELECT * FROM orders WHERE id = $1", [req.params.id]);
+        const order = rows[0];
 
-        // CRITICAL SYSTEM LOGIC: "Active Connection" Lifecycle
-        // Stage 2 (Activation): Increment activeBarrels if order contains 20L Jars
-        const jarItem = order.items.find(i => i.id === '20L');
-        if (jarItem && jarItem.quantity > 0) {
-            try {
-                await db.query("UPDATE users SET activeBarrels = activeBarrels + $1 WHERE uid = $2", [jarItem.quantity, order.userId]);
-            } catch (e) {
-                console.error("Failed to update activeBarrels", e);
+        if (!order) return res.status(404).json({ error: 'Order not found' });
+
+        await db.query('BEGIN');
+
+        let updateQuery = "UPDATE orders SET ";
+        const updates = [];
+        const params = [];
+        let pIdx = 1;
+
+        if (status) {
+            updates.push(`status = $${pIdx++}`);
+            params.push(status);
+
+            if (status === 'shipped' && !order.shippedAt) {
+                updates.push(`shippedAt = $${pIdx++}`);
+                params.push(Date.now());
+            } else if (status === 'delivered' && !order.deliveredAt) {
+                updates.push(`deliveredAt = $${pIdx++}`);
+                params.push(Date.now());
             }
         }
 
-        res.json({ success: true, order });
-    } catch (err) {
-        console.error(`[Data] Order Creation Error:`, err.message);
-        return res.status(500).json({ error: err.message });
-    }
-});
+        if (assignedAgentId !== undefined) {
+            updates.push(`assignedAgentId = $${pIdx++}`);
+            params.push(assignedAgentId); // Can be null to unassign
+        }
 
-// Update Order Status
-router.patch('/orders/:id', async (req, res) => {
-    const { status } = req.body;
-    try {
-        await db.query("UPDATE orders SET status = $1 WHERE id = $2", [status, req.params.id]);
+        if (updates.length === 0) {
+            await db.query('ROLLBACK');
+            return res.json({ success: true }); // Nothing to update
+        }
+
+        updateQuery += updates.join(', ');
+        updateQuery += ` WHERE id = $${pIdx}`;
+        params.push(req.params.id);
+
+        await db.query(updateQuery, params);
+
+        // Logic for Active Barrels update & Inventory Replenishment on Delivery
+        if (status === 'delivered' && order.status !== 'delivered') {
+            const jarItem = (order.items || []).find(i => i.id === '20L');
+            if (jarItem && jarItem.quantity > 0) {
+                const returned = order.barrelReturns || 0;
+                const netIncrease = Math.max(0, jarItem.quantity - returned);
+
+                // Add 20L (20000ml) per jar delivered
+                const waterAdded = jarItem.quantity * 20000;
+
+                await db.query(
+                    "UPDATE users SET activeBarrels = activeBarrels + $1, home_stock = home_stock + $2, order_count = order_count + 1 WHERE uid = $3",
+                    [netIncrease, waterAdded, order.userId]
+                );
+                console.log(`Inventory Replenished: +${waterAdded}ml and +1 order_count for ${order.userId}`);
+            } else {
+                // Even if no 20L jars, increment order count for free delivery logic
+                await db.query("UPDATE users SET order_count = order_count + 1 WHERE uid = $1", [order.userId]);
+            }
+        }
+
+        // Logic for SETTLEMENT on Cancellation
+        if (status === 'cancelled' && order.status !== 'cancelled') {
+            // Only refund if the order was paid via WALLET or UPI
+            // For now, we assume all confirmed orders need a refund to internal wallet
+            const refundAmount = Number(order.totalAmount);
+            if (refundAmount > 0) {
+                await db.query("UPDATE users SET wallet = wallet + $1 WHERE uid = $2", [refundAmount, order.userId]);
+                console.log(`Refunded ₹${refundAmount} to user ${order.userId} due to cancellation`);
+            }
+        }
+
+        await db.query('COMMIT');
         res.json({ success: true });
     } catch (err) {
+        await db.query('ROLLBACK');
         res.status(500).json({ error: err.message });
     }
 });
 
-// Get All Users (with optional role filter)
-router.get('/users', async (req, res) => {
-    const { role } = req.query;
-
-    let sql = "SELECT * FROM users";
-    const params = [];
-
-    if (role) {
-        sql += " WHERE role = $1";
-        params.push(role);
-    }
-
-    try {
-        const { rows } = await db.query(sql, params);
-        const parsed = rows.map(r => ({
-            ...r,
-            address: r.address || null
-        }));
-        res.json(parsed);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Get Specific User
-router.get('/users/:uid', async (req, res) => {
-    try {
-        const { rows } = await db.query("SELECT * FROM users WHERE uid = $1", [req.params.uid]);
-        const row = rows[0];
-        if (!row) return res.status(404).json({ error: 'User not found' });
-        row.address = row.address || null;
-        res.json(row);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Update User (Wallet, Address, etc.)
-router.patch('/users/:uid', async (req, res) => {
-    const changes = req.body;
-    const uid = req.params.uid;
-    console.log(`[Data] Updating user ${uid}:`, changes);
-
-    const fields = Object.keys(changes);
-    const values = Object.values(changes).map(v => typeof v === 'object' ? JSON.stringify(v) : v);
-
-    if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
-
-    const setClause = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
-
-    try {
-        await db.query(`UPDATE users SET ${setClause} WHERE uid = $${fields.length + 1}`, [...values, uid]);
-        console.log(`[Data] User ${uid} updated successfully`);
-        res.json({ success: true });
-    } catch (err) {
-        console.error(`[Data] User Update Error:`, err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
+// ... Users routes ...
 
 // Get Return Requests
 router.get('/returns', async (req, res) => {
-    const { district } = req.query;
+    const { district, assignedAgentId } = req.query;
     let sql = "SELECT * FROM return_requests";
     let params = [];
+
     if (district) {
-        sql += " WHERE district = $1";
-        params = [district];
+        if (assignedAgentId) {
+            sql += " WHERE district = $1 AND assignedAgentId = $2";
+            params = [district, assignedAgentId];
+        } else {
+            sql += " WHERE district = $1";
+            params = [district];
+        }
     }
     sql += " ORDER BY timestamp DESC";
 
@@ -235,10 +277,11 @@ router.post('/returns', async (req, res) => {
     const ret = req.body;
     try {
         await db.query(
-            "INSERT INTO return_requests (id, userId, userName, userPhone, district, address, returnDate, barrelCount, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+            "INSERT INTO return_requests (id, userId, userName, userPhone, district, state, city, address, returnDate, barrelCount, status, timestamp, assignedAgentId) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
             [
-                ret.id, ret.userId, ret.userName, ret.userPhone, ret.district,
-                JSON.stringify(ret.address), ret.returnDate, ret.barrelCount, ret.status, ret.timestamp
+                ret.id, ret.userId, ret.userName, ret.userPhone, ret.district, ret.state, ret.city,
+                JSON.stringify(ret.address), ret.returnDate, ret.barrelCount, ret.status, ret.timestamp,
+                ret.assignedAgentId || null
             ]
         );
         res.json({ success: true, returnRequest: ret });
@@ -247,13 +290,12 @@ router.post('/returns', async (req, res) => {
     }
 });
 
-// Update Return Request Status & Trigger Wallet/Barrel Logic
+// Update Return Request Status & Assignment
 router.patch('/returns/:id', async (req, res) => {
-    const { status } = req.body;
+    const { status, assignedAgentId } = req.body;
     const returnId = req.params.id;
 
     try {
-        // First get the return request to know user and count
         const { rows } = await db.query("SELECT * FROM return_requests WHERE id = $1", [returnId]);
         const row = rows[0];
         if (!row) return res.status(404).json({ error: 'Request not found' });
@@ -262,21 +304,37 @@ router.patch('/returns/:id', async (req, res) => {
 
         await db.query('BEGIN');
 
-        // Update Status
-        await db.query("UPDATE return_requests SET status = $1 WHERE id = $2", [status, returnId]);
+        let updateQuery = "UPDATE return_requests SET ";
+        const updates = [];
+        const params = [];
+        let pIdx = 1;
 
-        // Stage 4: Agent "Verified Collection" (completed)
-        // Action: Credit Wallet (Digital Receipt)
-        if (status === 'completed') {
-            const refundAmount = barrelCount * 200;
-            await db.query("UPDATE users SET wallet = wallet + $1 WHERE uid = $2", [refundAmount, userId]);
+        if (status) {
+            updates.push(`status = $${pIdx++}`);
+            params.push(status);
         }
 
-        // Stage 5: Admin "Refund Allotted" (refunded) - User took cash
-        // Action: Debit Wallet (Balance Cash) AND Decrement activeBarrels (Close connection)
+        if (assignedAgentId !== undefined) {
+            updates.push(`assignedAgentId = $${pIdx++}`);
+            params.push(assignedAgentId);
+        }
+
+        if (updates.length > 0) {
+            updateQuery += updates.join(', ');
+            updateQuery += ` WHERE id = $${pIdx}`;
+            params.push(returnId);
+            await db.query(updateQuery, params);
+        }
+
+        // Wallet Logic (Unchanged)
+        if (status === 'completed') {
+            const refundAmount = barrelCount * 200;
+            await db.query("UPDATE users SET wallet = wallet + $1, activeBarrels = activeBarrels - $2 WHERE uid = $3", [refundAmount, barrelCount, userId]);
+        }
+
         if (status === 'refunded') {
             const refundAmount = barrelCount * 200;
-            await db.query("UPDATE users SET wallet = wallet - $1, activeBarrels = activeBarrels - $2 WHERE uid = $3", [refundAmount, barrelCount, userId]);
+            await db.query("UPDATE users SET wallet = wallet - $1 WHERE uid = $2", [refundAmount, userId]);
         }
 
         await db.query('COMMIT');
@@ -337,14 +395,142 @@ router.get('/interests', async (req, res) => {
 
 // Log Interest (When user selects unserviced district)
 router.post('/interests', async (req, res) => {
-    const { district } = req.body;
-    if (!district) return res.status(400).json({ error: 'District required' });
+    const { district, state, city } = req.body;
+    // if (!district) return res.status(400).json({ error: 'District required' }); // Relaxed for now
 
     const timestamp = Date.now();
     try {
-        await db.query("INSERT INTO interests (district, timestamp) VALUES ($1, $2)", [district, timestamp]);
+        await db.query("INSERT INTO interests (district, state, city, timestamp) VALUES ($1, $2, $3, $4)", [district, state, city, timestamp]);
         res.json({ success: true });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get Locations
+router.get('/locations', async (req, res) => {
+    try {
+        const { rows } = await db.query("SELECT * FROM locations ORDER BY state, city");
+        const parsed = rows.map(r => ({
+            ...r,
+            agentPhones: r.agentPhones || []
+        }));
+        res.json(parsed);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create Location
+router.post('/locations', async (req, res) => {
+    const { state, city } = req.body;
+    if (!state || !city) return res.status(400).json({ error: 'State and City required' });
+
+    try {
+        await db.query("INSERT INTO locations (state, city) VALUES ($1, $2)", [state, city]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update Location
+router.patch('/locations/:id', async (req, res) => {
+    const changes = req.body;
+    const id = req.params.id;
+    const fields = Object.keys(changes);
+    const values = Object.values(changes).map(v => typeof v === 'object' ? JSON.stringify(v) : v);
+
+    if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+    const setClause = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
+
+    try {
+        await db.query(`UPDATE locations SET ${setClause} WHERE id = $${fields.length + 1}`, [...values, id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete Location
+router.delete('/locations/:id', async (req, res) => {
+    const id = req.params.id;
+    try {
+        await db.query("DELETE FROM locations WHERE id = $1", [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get Users (Filter by Role)
+router.get('/users', async (req, res) => {
+    const { role, district } = req.query;
+    let sql = "SELECT * FROM users";
+    let params = [];
+
+    if (role) {
+        sql += " WHERE role = $1";
+        params.push(role);
+    }
+
+    if (district) {
+        sql += params.length > 0 ? " AND district = $" + (params.length + 1) : " WHERE district = $1";
+        params.push(district);
+    }
+
+    try {
+        const { rows } = await db.query(sql, params);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update Hydration / Home Stock level
+router.patch('/users/:uid/hydration', async (req, res) => {
+    const { ml } = req.body;
+    try {
+        await db.query("UPDATE users SET home_stock = home_stock - $1 WHERE uid = $2", [ml, req.params.uid]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get Single User
+router.get('/users/:uid', async (req, res) => {
+    const { uid } = req.params;
+    try {
+        const { rows } = await db.query("SELECT * FROM users WHERE uid = $1", [uid]);
+        if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        res.json(rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update User (for assignedZones, name, etc.)
+router.patch('/users/:uid', async (req, res) => {
+    const { uid } = req.params;
+    const changes = req.body;
+    const fields = Object.keys(changes);
+    const values = Object.values(changes).map(v => typeof v === 'object' ? JSON.stringify(v) : v);
+
+    if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+    const setClause = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
+
+    console.log(`[PATCH User] ${uid} Update:`, changes);
+    console.log(`[PATCH User] SQL: UPDATE users SET ${setClause} WHERE uid = $${fields.length + 1} Params:`, [...values, uid]);
+
+    try {
+        const result = await db.query(`UPDATE users SET ${setClause} WHERE uid = $${fields.length + 1}`, [...values, uid]);
+        console.log(`[PATCH User] Success. Rows affected:`, result.rowCount);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(`[PATCH User] Error:`, err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -359,5 +545,161 @@ router.delete('/users/:uid', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// ===== ZONE MANAGEMENT =====
+
+// Get Zones (filter by district/state/city)
+router.get('/zones', async (req, res) => {
+    const { district, state, city } = req.query;
+    let sql = "SELECT * FROM zones WHERE isActive = TRUE";
+    let params = [];
+
+    if (district) {
+        sql += " AND district = $1";
+        params.push(district);
+    } else if (state && city) {
+        sql += " AND state = $1 AND city = $2";
+        params = [state, city];
+    }
+
+    try {
+        const { rows } = await db.query(sql, params);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create Zone
+router.post('/zones', async (req, res) => {
+    const { district, state, city, name, description, landmarks, postalCodes } = req.body;
+
+    if (!district || !state || !city || !name) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+        const { rows } = await db.query(
+            `INSERT INTO zones (district, state, city, name, description, landmarks, postalCodes, createdAt, isActive) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE) RETURNING *`,
+            [district, state, city, name, description, JSON.stringify(landmarks || []), JSON.stringify(postalCodes || []), Date.now()]
+        );
+        res.json(rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update Zone
+router.patch('/zones/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, description, landmarks, postalCodes, isActive } = req.body;
+
+    const updates = [];
+    const params = [];
+    let paramCount = 1;
+
+    if (name !== undefined) { updates.push(`name = $${paramCount++}`); params.push(name); }
+    if (description !== undefined) { updates.push(`description = $${paramCount++}`); params.push(description); }
+    if (landmarks !== undefined) { updates.push(`landmarks = $${paramCount++}`); params.push(JSON.stringify(landmarks)); }
+    if (postalCodes !== undefined) { updates.push(`postalCodes = $${paramCount++}`); params.push(JSON.stringify(postalCodes)); }
+    if (isActive !== undefined) { updates.push(`isActive = $${paramCount++}`); params.push(isActive); }
+
+    if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+    params.push(id);
+    const sql = `UPDATE zones SET ${updates.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+
+    try {
+        const { rows } = await db.query(sql, params);
+        res.json(rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete Zone
+router.delete('/zones/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query("DELETE FROM zones WHERE id = $1", [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Zone Detection & Auto-Assignment Helper
+async function detectZoneAndAssign(order) {
+    const { district, address } = order;
+
+    // Get all active zones for this district
+    const { rows: zones } = await db.query(
+        "SELECT * FROM zones WHERE district = $1 AND isActive = TRUE",
+        [district]
+    );
+
+    if (zones.length === 0) return { zone: null, agentId: null };
+
+    let detectedZone = null;
+
+    // 1. Check postal code match (highest priority)
+    if (address?.pincode) {
+        for (const zone of zones) {
+            const postalCodes = zone.postalcodes || [];
+            if (postalCodes.includes(address.pincode)) {
+                detectedZone = zone.name;
+                break;
+            }
+        }
+    }
+
+    // 2. Check landmark keywords (secondary)
+    if (!detectedZone && address?.fullAddress) {
+        const addressLower = address.fullAddress.toLowerCase();
+        for (const zone of zones) {
+            const landmarks = zone.landmarks || [];
+            for (const landmark of landmarks) {
+                if (addressLower.includes(landmark.toLowerCase())) {
+                    detectedZone = zone.name;
+                    break;
+                }
+            }
+            if (detectedZone) break;
+        }
+    }
+
+    if (!detectedZone) return { zone: null, agentId: null };
+
+    // Auto-assign to agent in this zone (load-based strategy)
+    const { rows: agents } = await db.query(
+        `SELECT uid FROM users 
+         WHERE role = 'AGENT' 
+         AND district = $1 
+         AND assignedZones IS NOT NULL 
+         AND assignedZones::jsonb @> $2::jsonb`,
+        [district, JSON.stringify([detectedZone])]
+    );
+
+    if (agents.length === 0) return { zone: detectedZone, agentId: null };
+
+    // Load-based: Find agent with fewest pending orders in this zone
+    let selectedAgent = null;
+    let minOrders = Infinity;
+
+    for (const agent of agents) {
+        const { rows: orderCount } = await db.query(
+            "SELECT COUNT(*) as count FROM orders WHERE assignedAgentId = $1 AND status = 'pending'",
+            [agent.uid]
+        );
+        const count = parseInt(orderCount[0].count);
+        if (count < minOrders) {
+            minOrders = count;
+            selectedAgent = agent.uid;
+        }
+    }
+
+    return { zone: detectedZone, agentId: selectedAgent };
+}
 
 module.exports = router;

@@ -40,7 +40,7 @@ router.post('/initiate', async (req, res) => {
             product_name: "Water Delivery Topup/Order",
             description: note,
             contact: "9999999999", // Should come from user profile ideally
-            name: "Aquaflow User", // Should come from user profile
+            name: "Pani Gadi User", // Should come from user profile
             email: "user@example.com" // Should come from user profile
         });
 

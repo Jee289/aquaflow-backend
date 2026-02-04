@@ -4,7 +4,9 @@ import { User } from '../types';
 
 interface AuthContextType {
     user: User | null;
-    login: (phone: string, name?: string, district?: string, role?: string) => Promise<User | null>;
+    login: (phone?: string, name?: string, district?: string, role?: string, state?: string, city?: string, email?: string, password?: string) => Promise<User | null>;
+    sendOtp: (phone: string) => Promise<void>;
+    verifyOtp: (phone: string, otp: string, name?: string, city?: string, state?: string, role?: string) => Promise<User | null>;
     logout: () => void;
     updateUser: (updatedUser: User) => void;
     isLoading: boolean;
@@ -50,9 +52,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return () => window.removeEventListener('storage', handleStorageChange);
     }, []);
 
-    const login = async (phone: string, name?: string, district?: string, role?: string) => {
+    const login = async (phone?: string, name?: string, district?: string, role?: string, state?: string, city?: string, email?: string, password?: string) => {
         try {
-            const res = await api.post('/auth/login', { phone, name, district, role });
+            const res = await api.post('/auth/login', { phone, name, district, role, state, city, email, password });
             const { user, token } = res.data;
             setUser(user);
             localStorage.setItem('aqua_user', JSON.stringify(user));
@@ -60,6 +62,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             return user;
         } catch (error) {
             console.error('Login failed', error);
+            throw error;
+        }
+    };
+
+    const sendOtp = async (phone: string) => {
+        await api.post('/auth/send-otp', { phone });
+    };
+
+    const verifyOtp = async (phone: string, otp: string, name?: string, city?: string, state?: string, role?: string) => {
+        try {
+            const res = await api.post('/auth/verify-otp', { phone, otp, name, city, state, role });
+            const { user, token } = res.data;
+            setUser(user);
+            localStorage.setItem('aqua_user', JSON.stringify(user));
+            localStorage.setItem('aqua_token', token);
+            return user;
+        } catch (error) {
+            console.error('OTP Verification failed', error);
             throw error;
         }
     };
@@ -77,7 +97,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, logout, updateUser, isLoading, impersonatedDistrict, setImpersonatedDistrict }}>
+        <AuthContext.Provider value={{ user, login, sendOtp, verifyOtp, logout, updateUser, isLoading, impersonatedDistrict, setImpersonatedDistrict }}>
             {children}
         </AuthContext.Provider>
     );

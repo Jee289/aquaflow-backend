@@ -4,10 +4,24 @@ const express = require('express');
 const cors = require('cors');
 const authRoutes = require('./routes/auth');
 const dataRoutes = require('./routes/data');
-const razorpayRoutes = require('./routes/razorpay');
+const cashfreeRoutes = require('./routes/cashfree');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+
+const PORT = process.env.PORT || 3000;
+
+// Security Middleware
+app.use(helmet());
+
+// Rate Limiting (to prevent brute force on OTPs and other APIs)
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again after 15 minutes'
+});
+app.use('/api/', limiter);
 
 app.use(cors());
 app.use(express.json());
@@ -15,12 +29,12 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api', dataRoutes);
-app.use('/api/razorpay', razorpayRoutes);
+app.use('/api/cashfree', cashfreeRoutes);
 
 const db = require('./db');
 
 app.get('/', (req, res) => {
-    res.send('AquaFlow API is running');
+    res.send('Pani Gadi API is running');
 });
 
 app.listen(PORT, '0.0.0.0', async () => {

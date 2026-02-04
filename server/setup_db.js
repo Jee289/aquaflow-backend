@@ -13,7 +13,7 @@ const createDb = async () => {
     // Replace database name with 'postgres' for initial connection
     const postgresUrl = originalUrl.replace(/\/[^/]+$/, '/postgres');
 
-    console.log("Connecting to default 'postgres' database to check for 'aquaflow'...");
+    console.log("Connecting to default 'postgres' database to check for 'panigadi'...");
 
     const client = new Client({
         connectionString: postgresUrl,
@@ -23,14 +23,14 @@ const createDb = async () => {
     try {
         await client.connect();
 
-        // 2. Check if aquaflow db exists
-        const res = await client.query("SELECT 1 FROM pg_database WHERE datname = 'aquaflow'");
+        // 2. Check if panigadi db exists
+        const res = await client.query("SELECT 1 FROM pg_database WHERE datname = 'panigadi'");
         if (res.rowCount === 0) {
-            console.log("Database 'aquaflow' not found. Creating...");
-            await client.query('CREATE DATABASE aquaflow');
-            console.log("Database 'aquaflow' created successfully.");
+            console.log("Database 'panigadi' not found. Creating...");
+            await client.query('CREATE DATABASE panigadi');
+            console.log("Database 'panigadi' created successfully.");
         } else {
-            console.log("Database 'aquaflow' already exists.");
+            console.log("Database 'panigadi' already exists.");
         }
     } catch (err) {
         console.error("Error setting up database:", err.message);

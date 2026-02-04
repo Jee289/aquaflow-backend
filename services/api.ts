@@ -1,9 +1,10 @@
 import axios from 'axios';
 
-// In production/capacitor, this should be the public IP or domain of your deployed server
-// For local Android emulator, use 'http://10.0.2.2:3000'
-// For local web, use 'http://localhost:3000'
-const BASE_URL = 'http://localhost:3000/api';
+// Set your Production URL here if you've already deployed
+const PROD_URL = 'https://panigadi-api.onrender.com/api'; // Example Render URL
+const DEV_URL = 'http://localhost:3000/api';
+
+const BASE_URL = process.env.NODE_ENV === 'production' ? PROD_URL : DEV_URL;
 
 const api = axios.create({
     baseURL: BASE_URL,

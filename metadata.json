@@ -1,6 +1,6 @@
 {
-  "name": "AquaFlow - Water Delivery App",
-  "description": "A comprehensive water delivery platform featuring WhatsApp OTP login, real-time address mapping, regular and occasional order management, and dedicated admin/delivery agent dashboards.",
+  "name": "Pani Gadi - Water Delivery App",
+  "description": "A premium water delivery platform featuring WhatsApp OTP login, real-time address mapping, regular and occasional order management, and dedicated admin/delivery agent dashboards.",
   "requestFramePermissions": [
     "geolocation"
   ]

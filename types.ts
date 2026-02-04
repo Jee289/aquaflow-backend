@@ -14,9 +14,12 @@ export interface User {
   wallet: number;
   referralCode: string;
   district?: string;
-  referredBy?: string; 
-  referralBalance: number; 
-  orderCount: number; 
+  state?: string;
+  city?: string;
+  referredBy?: string;
+  referralBalance: number;
+  orderCount: number;
+  homeStock: number;
   activeBarrels: number; // 1 barrel = 1 active connection
   notifiedDistricts: string[]; // Track which districts the user requested notification for
 }
@@ -26,6 +29,16 @@ export interface DistrictConfig {
   adminPhone: string;
   agentPhones: string[];
   supportMsg?: string; // Admin customized support message
+}
+
+export interface LocationConfig {
+  id: number;
+  state: string;
+  city: string;
+  isActive: boolean;
+  adminPhone?: string;
+  agentPhones?: string[];
+  supportMsg?: string;
 }
 
 export interface Address {
@@ -66,9 +79,13 @@ export interface Order {
   discountApplied: number;
   status: 'pending' | 'shipped' | 'delivered' | 'cancelled';
   deliveryDate: string;
-  district: string; 
+  district?: string;
+  state?: string;
+  city?: string;
   address: Address;
   paymentMethod: 'UPI' | 'WALLET';
+  barrelReturns?: number;
+  assignedAgentId?: string; // ID of the agent assigned to this order
   timestamp: number;
 }
 
