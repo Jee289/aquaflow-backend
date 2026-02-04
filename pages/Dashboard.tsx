@@ -438,6 +438,12 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div className="bg-white/20 p-3 rounded-2xl group-hover:rotate-12 transition-transform"><PhoneCall size={24} /></div>
               </a>
+              <button
+                onClick={() => { setShowSupport(false); navigate('/legal'); }}
+                className="w-full text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] py-4 hover:text-blue-600 transition-colors"
+              >
+                Terms & Cancellation Policy
+              </button>
             </div>
           </div>
         </div>

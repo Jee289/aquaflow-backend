@@ -12,6 +12,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import DeliveryAgent from './pages/DeliveryAgent';
 import OwnerDashboard from './pages/OwnerDashboard';
 import AreaSelector from './components/AreaSelector';
+import Legal from './pages/Legal';
 
 const PrivateRoute = ({ children, role }: { children: React.ReactNode, role?: AppRole }) => {
   const { user, isLoading } = useAuth();
@@ -65,6 +66,7 @@ const App: React.FC = () => {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/legal" element={<Legal />} />
           <Route path="/select-area" element={<AreaSelectorRoute />} />
 
           <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />

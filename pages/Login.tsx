@@ -358,9 +358,17 @@ const Login: React.FC = () => {
                 )}
             </div>
 
-            <p className="mt-12 text-[9px] font-black uppercase tracking-[0.5em] text-indigo-400 relative z-10 flex items-center gap-3">
-                <ShieldCheck size={14} className="text-emerald-500" /> AES-256 Quantum Shield
-            </p>
+            <div className="mt-12 flex flex-col items-center gap-4 relative z-10">
+                <p className="text-[9px] font-black uppercase tracking-[0.5em] text-indigo-400 flex items-center gap-3">
+                    <ShieldCheck size={14} className="text-emerald-500" /> AES-256 Quantum Shield
+                </p>
+                <button
+                    onClick={() => navigate('/legal')}
+                    className="text-[10px] font-black text-indigo-300 hover:text-indigo-600 uppercase tracking-widest transition-colors py-2 underline decoration-1 underline-offset-4"
+                >
+                    Terms & Cancellation Policy
+                </button>
+            </div>
         </div>
     );
 };
