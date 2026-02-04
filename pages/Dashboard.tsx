@@ -79,7 +79,7 @@ const Dashboard: React.FC = () => {
   const locationInfo = locations?.find(l => l.city === userCity) || locations?.find(l => l.city === user.district);
 
   const upiApps = [
-    { id: 'razorpay', name: 'Pay Now', icon: 'https://img.icons8.com/color/144/bank-card-back-side.png' }
+    { id: 'cashfree', name: 'Pay Now', icon: 'https://img.icons8.com/color/144/bank-card-back-side.png' }
   ];
 
   const handleAddCash = async (appId: string) => {

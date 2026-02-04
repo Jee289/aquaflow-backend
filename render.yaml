@@ -20,10 +20,6 @@ services:
         sync: false # Set in Render Dashboard
       - key: MSG91_TEMPLATE_ID
         sync: false # Set in Render Dashboard
-      - key: RAZORPAY_KEY_ID
-        sync: false # Set in Render Dashboard
-      - key: RAZORPAY_KEY_SECRET
-        sync: false # Set in Render Dashboard
 
 databases:
   - name: pani-gadi-db

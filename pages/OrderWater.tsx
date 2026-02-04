@@ -78,7 +78,7 @@ const OrderWater: React.FC = () => {
     }
   }, [user]);
 
-  // Razorpay handles all UPI apps internally
+  // Cashfree handles all UPI apps internally
 
   const now = new Date();
   const currentHour = now.getHours();
