@@ -22,7 +22,8 @@ const initDb = async () => {
             district TEXT,
             activeBarrels INTEGER DEFAULT 0,
             referralCode TEXT,
-            address JSONB
+            address JSONB,
+            password TEXT
         )`);
 
         // 2. Products Table

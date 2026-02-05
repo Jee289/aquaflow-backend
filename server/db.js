@@ -155,6 +155,7 @@ const initDb = async () => {
       try { await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_balance NUMERIC DEFAULT 0`); } catch (e) { }
       try { await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS order_count INTEGER DEFAULT 0`); } catch (e) { }
       try { await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by TEXT`); } catch (e) { }
+      try { await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT`); } catch (e) { }
 
       // 2. Products Table
       await client.query(`CREATE TABLE IF NOT EXISTS products (
@@ -319,6 +320,7 @@ const initDb = async () => {
       sqliteDb.run(`ALTER TABLE users ADD COLUMN referral_balance REAL DEFAULT 0`, (err) => { });
       sqliteDb.run(`ALTER TABLE users ADD COLUMN order_count INTEGER DEFAULT 0`, (err) => { });
       sqliteDb.run(`ALTER TABLE users ADD COLUMN referred_by TEXT`, (err) => { });
+      sqliteDb.run(`ALTER TABLE users ADD COLUMN password TEXT`, (err) => { });
 
       // PRODUCTS
       sqliteDb.run(`CREATE TABLE IF NOT EXISTS products (
