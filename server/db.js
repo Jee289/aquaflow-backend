@@ -276,8 +276,11 @@ const initDb = async () => {
       await client.query(`CREATE TABLE IF NOT EXISTS otp_verifications (
                 phone TEXT PRIMARY KEY,
                 otp TEXT NOT NULL,
+                verificationId TEXT,
                 expiresAt BIGINT NOT NULL
             )`);
+
+      try { await client.query(`ALTER TABLE otp_verifications ADD COLUMN IF NOT EXISTS verificationId TEXT`); } catch (e) { }
 
       await client.query('COMMIT');
       console.log("PostgreSQL Tables Initialized");
@@ -432,8 +435,10 @@ const initDb = async () => {
       sqliteDb.run(`CREATE TABLE IF NOT EXISTS otp_verifications (
                 phone TEXT PRIMARY KEY,
                 otp TEXT NOT NULL,
+                verificationId TEXT,
                 expiresAt INTEGER NOT NULL
             )`);
+      sqliteDb.run(`ALTER TABLE otp_verifications ADD COLUMN verificationId TEXT`, (err) => { });
 
       console.log("SQLite Tables Initialized");
     });

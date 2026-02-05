@@ -5,8 +5,21 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 
 const SECRET_KEY = process.env.JWT_SECRET || 'aqua_secret_key_123';
-const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY;
-const MSG91_TEMPLATE_ID = process.env.MSG91_TEMPLATE_ID;
+
+// MESSAGE CENTRAL CONFIGURATION (VerifyNow)
+const MC_CUSTOMER_ID = process.env.MESSAGE_CENTRAL_CUSTOMER_ID || 'C-320A86CF83604B9';
+const MC_API_KEY = process.env.MESSAGE_CENTRAL_API_KEY; // Base-64 encrypted password
+
+const getMCAuthToken = async () => {
+    if (!MC_API_KEY) return null;
+    try {
+        const response = await axios.get(`https://cpaas.messagecentral.com/authToken?customerId=${MC_CUSTOMER_ID}&key=${MC_API_KEY}&scope=NEW`);
+        return response.data?.authToken;
+    } catch (err) {
+        console.error('MC TOKEN ERROR:', err.message);
+        return null;
+    }
+};
 
 // --- CUSTOM OTP ENDPOINTS ---
 
@@ -19,38 +32,38 @@ router.post('/send-otp', async (req, res) => {
         const otp = (phone === '9999999999') ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins
 
+        let verificationId = null;
+
+        // Message Central Integration
+        if (MC_API_KEY && phone !== '9999999999') {
+            try {
+                const authToken = await getMCAuthToken();
+                if (authToken) {
+                    const sendUrl = 'https://cpaas.messagecentral.com/verification/v3/send';
+                    const response = await axios.post(sendUrl, null, {
+                        params: {
+                            countryCode: '91',
+                            mobileNumber: phone,
+                            flowType: 'SMS',
+                            otpLength: '6',
+                            otp: otp // VerifyNow can take our generated OTP if we pass it, or it can generate its own. 
+                        },
+                        headers: { 'authToken': authToken }
+                    });
+                    verificationId = response.data?.data?.verificationId;
+                    console.log('MC Send Success. VerificationId:', verificationId);
+                }
+            } catch (err) {
+                console.error('MC SEND ERROR:', err.response?.data || err.message);
+            }
+        }
+
         await db.query(
-            "INSERT INTO otp_verifications (phone, otp, expiresAt) VALUES ($1, $2, $3) ON CONFLICT (phone) DO UPDATE SET otp = $2, expiresAt = $3",
-            [phone, otp, expiresAt]
+            "INSERT INTO otp_verifications (phone, otp, expiresAt, verificationId) VALUES ($1, $2, $3, $4) ON CONFLICT (phone) DO UPDATE SET otp = $2, expiresAt = $3, verificationId = $4",
+            [phone, otp, expiresAt, verificationId]
         );
 
         console.log(`OTP for ${phone}: ${otp}`);
-
-        // If it's a test number, don't call MSG91
-        if (phone === '9999999999') {
-            return res.json({ success: true, message: 'OTP sent (Test Number Mode)' });
-        }
-
-        // MSG91 INTEGRATION
-        if (MSG91_AUTH_KEY && MSG91_TEMPLATE_ID) {
-            try {
-                // MSG91 SendOTP API (v5)
-                // mobile should be in 91xxxxxxxxxx format
-                const url = `https://api.msg91.com/api/v5/otp?template_id=${MSG91_TEMPLATE_ID}&mobile=91${phone}&authkey=${MSG91_AUTH_KEY}&otp=${otp}`;
-
-                console.log('Sending OTP via MSG91...');
-                const response = await axios.get(url, { timeout: 10000 });
-                console.log('MSG91 Response:', response.data);
-            } catch (err) {
-                console.error('MSG91 API ERROR:', {
-                    message: err.message,
-                    data: err.response?.data,
-                    status: err.response?.status
-                });
-            }
-        } else {
-            console.log('MSG91 Credentials missing. OTP not sent via API.');
-        }
 
         res.json({ success: true, message: 'OTP sent successfully' });
     } catch (err) {
@@ -68,8 +81,32 @@ router.post('/verify-otp', async (req, res) => {
         const record = rows[0];
 
         if (!record) return res.status(400).json({ error: 'No OTP record found' });
-        if (record.otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
         if (Date.now() > record.expiresAt) return res.status(400).json({ error: 'OTP expired' });
+
+        // Message Central Validation
+        if (record.verificationId && MC_API_KEY && phone !== '9999999999') {
+            try {
+                const authToken = await getMCAuthToken();
+                if (authToken) {
+                    const validateUrl = `https://cpaas.messagecentral.com/verification/v3/validateOtp?verificationId=${record.verificationId}&otp=${otp}`;
+                    const response = await axios.get(validateUrl, {
+                        headers: { 'authToken': authToken }
+                    });
+
+                    // Message Central response check
+                    if (response.data?.responseCode !== 200) {
+                        return res.status(400).json({ error: response.data?.message || 'Invalid OTP' });
+                    }
+                }
+            } catch (err) {
+                console.error('MC VALIDATE ERROR:', err.response?.data || err.message);
+                // Fallback to internal check if API fails? No, for strictness we should fail unless verified
+                return res.status(400).json({ error: 'OTP Verification failed via service' });
+            }
+        } else {
+            // Local check fallback (Test numbers or if MC not configured)
+            if (record.otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
+        }
 
         // OTP Valid! Cleanup
         await db.query("DELETE FROM otp_verifications WHERE phone = $1", [phone]);

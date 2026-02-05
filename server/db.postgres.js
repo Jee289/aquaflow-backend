@@ -83,6 +83,14 @@ const initDb = async () => {
             timestamp BIGINT NOT NULL
         )`);
 
+        // 7. OTP Verifications
+        await client.query(`CREATE TABLE IF NOT EXISTS otp_verifications (
+            phone TEXT PRIMARY KEY,
+            otp TEXT NOT NULL,
+            verificationId TEXT,
+            expiresAt BIGINT NOT NULL
+        )`);
+
         await client.query('COMMIT');
         console.log("PostgreSQL Tables Initialized");
     } catch (e) {

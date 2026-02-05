@@ -16,10 +16,10 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
-      - key: MSG91_AUTH_KEY
-        sync: false # Set in Render Dashboard
-      - key: MSG91_TEMPLATE_ID
-        sync: false # Set in Render Dashboard
+      - key: MESSAGE_CENTRAL_CUSTOMER_ID
+        value: "C-320A86CF83604B9"
+      - key: MESSAGE_CENTRAL_API_KEY
+        sync: false # Set this in Render Dashboard (Base-64 password)
 
 databases:
   - name: pani-gadi-db
