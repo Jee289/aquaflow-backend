@@ -41,7 +41,25 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', async () => {
     try {
         await db.initDb();
+
+        // AUTO-SETUP OWNER (Ensures you can always login)
+        console.log('[Setup] Checking for Owner account...');
+        const ownerEmail = 'jeevanjyotisahu12@gmail.com';
+        const { rows } = await db.query("SELECT * FROM users WHERE email = $1", [ownerEmail]);
+
+        if (rows.length === 0) {
+            console.log('[Setup] Owner not found. Creating account...');
+            await db.query(
+                "INSERT INTO users (uid, name, phone, email, password, role, wallet, activeBarrels, referralCode) VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 'OWNER')",
+                ['OWNER-001', 'Pani Gadi Owner', '7750038967', ownerEmail, 'Panigadi@9778847668', 'OWNER']
+            );
+            console.log('[Setup] Owner account created successfully.');
+        } else {
+            // Update password just in case it was changed
+            await db.query("UPDATE users SET password = $1, role = 'OWNER' WHERE email = $2", ['Panigadi@9778847668', ownerEmail]);
+            console.log('[Setup] Owner account confirmed/updated.');
+        }
     } catch (e) {
-        console.error('Database initialization failed:', e);
+        console.error('Database initialization/setup failed:', e);
     }
 });
