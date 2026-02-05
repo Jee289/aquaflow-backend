@@ -49,6 +49,7 @@ router.post('/send-otp', async (req, res) => {
                     const response = await axios.post(sendUrl, null, {
                         params: {
                             countryCode: '91',
+                            customerId: MC_CUSTOMER_ID,
                             mobileNumber: phone,
                             flowType: 'SMS',
                             otpLength: '6',
@@ -56,13 +57,13 @@ router.post('/send-otp', async (req, res) => {
                         },
                         headers: { 'authToken': authToken }
                     });
-                    console.log('[MC] Send API Response:', response.data);
+                    console.log('[MC] Send API Response:', JSON.stringify(response.data, null, 2));
                     verificationId = response.data?.data?.verificationId;
                 } else {
                     console.log('[MC] FAILED TO GET AUTH TOKEN - Check your CustomerID and Key');
                 }
             } catch (err) {
-                console.error('MC SEND ERROR:', err.response?.data || err.message);
+                console.error('MC SEND ERROR:', JSON.stringify(err.response?.data || err.message, null, 2));
             }
         }
 
