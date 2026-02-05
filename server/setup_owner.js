@@ -4,7 +4,7 @@ const ownerData = {
     uid: 'OWNER-001',
     name: 'Pani Gadi Owner',
     phone: '7750038967',
-    email: 'gadipani7@gmail.com',
+    email: 'jeevanjyotisahu12@gmail.com',
     password: 'Panigadi@9778847668',
     role: 'OWNER'
 };

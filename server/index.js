@@ -7,6 +7,7 @@ const dataRoutes = require('./routes/data');
 const cashfreeRoutes = require('./routes/cashfree');
 
 const app = express();
+app.set('trust proxy', 1); // Required for express-rate-limit to work correctly on Render
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
