@@ -11,12 +11,17 @@ const MC_CUSTOMER_ID = process.env.MESSAGE_CENTRAL_CUSTOMER_ID || 'C-320A86CF836
 const MC_API_KEY = process.env.MESSAGE_CENTRAL_API_KEY; // Base-64 encrypted password
 
 const getMCAuthToken = async () => {
-    if (!MC_API_KEY) return null;
+    if (!MC_API_KEY) {
+        console.log('[MC] API KEY MISSING in environment variables');
+        return null;
+    }
     try {
+        console.log('[MC] Requesting Auth Token for Customer:', MC_CUSTOMER_ID);
         const response = await axios.get(`https://cpaas.messagecentral.com/authToken?customerId=${MC_CUSTOMER_ID}&key=${MC_API_KEY}&scope=NEW`);
+        console.log('[MC] Auth Token Response:', response.data);
         return response.data?.authToken;
     } catch (err) {
-        console.error('MC TOKEN ERROR:', err.message);
+        console.error('MC TOKEN ERROR:', err.response?.data || err.message);
         return null;
     }
 };
@@ -40,18 +45,21 @@ router.post('/send-otp', async (req, res) => {
                 const authToken = await getMCAuthToken();
                 if (authToken) {
                     const sendUrl = 'https://cpaas.messagecentral.com/verification/v3/send';
+                    console.log('[MC] Sending OTP to:', phone);
                     const response = await axios.post(sendUrl, null, {
                         params: {
                             countryCode: '91',
                             mobileNumber: phone,
                             flowType: 'SMS',
                             otpLength: '6',
-                            otp: otp // VerifyNow can take our generated OTP if we pass it, or it can generate its own. 
+                            otp: otp
                         },
                         headers: { 'authToken': authToken }
                     });
+                    console.log('[MC] Send API Response:', response.data);
                     verificationId = response.data?.data?.verificationId;
-                    console.log('MC Send Success. VerificationId:', verificationId);
+                } else {
+                    console.log('[MC] FAILED TO GET AUTH TOKEN - Check your CustomerID and Key');
                 }
             } catch (err) {
                 console.error('MC SEND ERROR:', err.response?.data || err.message);
