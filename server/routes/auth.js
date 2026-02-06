@@ -19,7 +19,7 @@ const getMCAuthToken = async () => {
         console.log('[MC] Requesting Auth Token for Customer:', MC_CUSTOMER_ID);
         const response = await axios.get(`https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${MC_CUSTOMER_ID}&key=${MC_API_KEY}&scope=NEW`);
         console.log('[MC] Auth Token Response:', response.data);
-        return response.data?.authToken;
+        return response.data?.token;
     } catch (err) {
         console.error('MC TOKEN ERROR:', err.response?.data || err.message);
         return null;
