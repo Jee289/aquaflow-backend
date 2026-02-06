@@ -101,10 +101,6 @@ router.post('/verify-otp', async (req, res) => {
         if (!record) return res.status(400).json({ error: 'No OTP record found' });
         if (Date.now() > record.expiresAt) return res.status(400).json({ error: 'OTP expired' });
 
-        console.log('[VERIFY] Record from DB:', JSON.stringify(record, null, 2));
-        console.log('[VERIFY] VerificationId exists?', !!record.verificationId);
-        console.log('[VERIFY] MC_API_KEY exists?', !!MC_API_KEY);
-
         // Message Central Validation
         if (record.verificationId && MC_API_KEY && phone !== '9999999999') {
             try {

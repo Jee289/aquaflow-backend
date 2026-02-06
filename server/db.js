@@ -70,7 +70,9 @@ const MAP_KEYS = {
   'homestock': 'homeStock',
   'referralbalance': 'referralBalance',
   'ordercount': 'orderCount',
-  'referredby': 'referredBy'
+  'referredby': 'referredBy',
+  'verificationid': 'verificationId',
+  'expiresat': 'expiresAt'
 };
 
 const mapRowToCamel = (row) => {
