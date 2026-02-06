@@ -106,7 +106,7 @@ router.post('/verify-otp', async (req, res) => {
             try {
                 const authToken = await getMCAuthToken();
                 if (authToken) {
-                    const validateUrl = `https://cpaas.messagecentral.com/verification/v3/validateOtp?verificationId=${record.verificationId}&otp=${otp}`;
+                    const validateUrl = `https://cpaas.messagecentral.com/verification/v3/validateOtp?customerId=${MC_CUSTOMER_ID}&verificationId=${record.verificationId}&otp=${otp}`;
                     console.log('[MC VALIDATE] Calling:', validateUrl);
                     const response = await axios.get(validateUrl, {
                         headers: { 'authToken': authToken }
