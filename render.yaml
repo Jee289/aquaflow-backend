@@ -20,6 +20,10 @@ services:
         value: "C-320A86CF83604B9"
       - key: MESSAGE_CENTRAL_API_KEY
         sync: false # Set this in Render Dashboard (Base-64 password)
+      - key: CASHFREE_APP_ID
+        sync: false # Set your LIVE Cashfree App ID in Render Dashboard
+      - key: CASHFREE_SECRET_KEY
+        sync: false # Set your LIVE Cashfree Secret Key in Render Dashboard
 
 databases:
   - name: pani-gadi-db
