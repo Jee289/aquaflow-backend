@@ -107,6 +107,7 @@ router.post('/verify-otp', async (req, res) => {
                 const authToken = await getMCAuthToken();
                 if (authToken) {
                     const validateUrl = `https://cpaas.messagecentral.com/verification/v3/validateOtp?verificationId=${record.verificationId}&otp=${otp}`;
+                    console.log('[MC VALIDATE] Calling:', validateUrl);
                     const response = await axios.get(validateUrl, {
                         headers: { 'authToken': authToken }
                     });
@@ -117,13 +118,18 @@ router.post('/verify-otp', async (req, res) => {
                     }
                 }
             } catch (err) {
-                console.error('MC VALIDATE ERROR:', err.response?.data || err.message);
+                console.error('[MC VALIDATE] ERROR:', JSON.stringify(err.response?.data || err.message, null, 2));
                 // Fallback to internal check if API fails? No, for strictness we should fail unless verified
                 return res.status(400).json({ error: 'OTP Verification failed via service' });
             }
         } else {
             // Local check fallback (Test numbers or if MC not configured)
-            if (record.otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
+            console.log('[LOCAL VALIDATE] Checking OTP locally');
+            if (record.otp !== otp) {
+                console.log('[LOCAL VALIDATE] FAILED - OTP mismatch');
+                return res.status(400).json({ error: 'Invalid OTP' });
+            }
+            console.log('[LOCAL VALIDATE] SUCCESS');
         }
 
         // OTP Valid! Cleanup
