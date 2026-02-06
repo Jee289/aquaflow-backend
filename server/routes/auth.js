@@ -58,7 +58,8 @@ router.post('/send-otp', async (req, res) => {
                         headers: { 'authToken': authToken }
                     });
                     console.log('[MC] Send API Response:', JSON.stringify(response.data, null, 2));
-                    verificationId = response.data?.data?.verificationId;
+                    verificationId = response.data?.data?.verificationId || response.data?.verificationId;
+                    console.log('[MC] Extracted VerificationId:', verificationId);
                 } else {
                     console.log('[MC] FAILED TO GET AUTH TOKEN - Check your CustomerID and Key');
                 }
