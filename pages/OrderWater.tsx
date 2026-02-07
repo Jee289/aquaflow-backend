@@ -50,8 +50,25 @@ const OrderWater: React.FC = () => {
   const { user, updateUser } = useAuth();
   const navigate = useNavigate();
 
-  // Helper functions defined early to be used in logic
-  const isBarrel = (p: Product) => (p.image || '') === 'style:barrel' || (p.unit || '') === 'barrel' || p.id === '20L';
+  // Helper functions defined early to be used in logic (Permissive Mode v3.0)
+  const isBarrel = (p: Product) => {
+    // Explicit checks
+    if ((p.image || '') === 'style:barrel') return true;
+    if ((p.unit || '') === 'barrel') return true;
+    if (p.id === '20L') return true;
+
+    // Implicit checks (Brute force for deployment issues)
+    const name = (p.name || '').toLowerCase();
+    const price = Number(p.price);
+
+    // Check for "20ltr", "20 ltr", "jar", "can"
+    if (name.includes('20') && (name.includes('l') || name.includes('jar') || name.includes('can'))) return true;
+
+    // Check price signature (Assuming 50 is standard barrel price)
+    if (price === 50) return true;
+
+    return false;
+  };
   const isDispenser = (p: Product) => p.image === 'style:dispenser' || p.id === 'DISP';
   const isPackaged = (p: Product) => p.image === 'style:bottle' || p.unit === 'case' || p.id === '1L';
 
@@ -368,7 +385,7 @@ const OrderWater: React.FC = () => {
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-slate-50 rounded-2xl transition text-slate-400 border border-transparent hover:border-slate-100"><ChevronLeft size={24} /></button>
           <h1 className="text-xl font-black tracking-tighter uppercase italic flex items-center gap-2">
-            Order Water <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-1 rounded-full not-italic">v2.3</span>
+            Order Water <span className="text-[9px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded-full not-italic">v3.0</span>
           </h1>
         </div>
         <div className="bg-indigo-950 text-white px-5 py-2.5 rounded-2xl shadow-xl shadow-indigo-900/10">
