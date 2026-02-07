@@ -34,8 +34,13 @@ app.use('/api/cashfree', cashfreeRoutes);
 
 const db = require('./db');
 
-app.get('/', (req, res) => {
-    res.send('Pani Gadi API is running');
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, '../dist')));
+
+// The "catchall" handler: for any request that doesn't
+// match one above, send back React's index.html file.
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', async () => {
