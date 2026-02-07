@@ -12,6 +12,16 @@ router.get('/products', async (req, res) => {
     }
 });
 
+// DEBUG: Inspect Product Data
+router.get('/debug-products', async (req, res) => {
+    try {
+        const { rows } = await db.query("SELECT * FROM products");
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Create Product
 router.post('/products', async (req, res) => {
     const { id, name, price, stock, unit, image, type, securityFee, note } = req.body;
