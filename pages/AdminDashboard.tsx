@@ -578,7 +578,11 @@ const AdminDashboard: React.FC = () => {
                           {['style:barrel', 'style:bottle', 'style:dispenser'].map(s => (
                             <button
                               key={s}
-                              onClick={() => setNewProduct({ ...newProduct, image: s })}
+                              onClick={() => {
+                                let defaultFee = 0;
+                                if (s === 'style:barrel') defaultFee = 200;
+                                setNewProduct({ ...newProduct, image: s, securityFee: defaultFee });
+                              }}
                               className={`flex-1 p-4 rounded-2xl border-2 transition-all group ${newProduct.image === s ? 'border-indigo-600 bg-indigo-50 shadow-lg scale-105' : 'border-slate-100 bg-white hover:border-slate-300'}`}
                             >
                               <div className="flex justify-center mb-2 group-hover:scale-110 transition-transform"><ProductVisualSmall style={s} /></div>

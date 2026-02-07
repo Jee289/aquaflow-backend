@@ -171,6 +171,7 @@ const initDb = async () => {
                 note TEXT,
                 unit TEXT DEFAULT 'unit'
             )`);
+      try { await client.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'unit'`); } catch (e) { }
 
       // 3. Orders Table
       await client.query(`CREATE TABLE IF NOT EXISTS orders (
@@ -336,6 +337,7 @@ const initDb = async () => {
                 note TEXT,
                 unit TEXT DEFAULT 'unit'
             )`);
+      sqliteDb.run(`ALTER TABLE products ADD COLUMN unit TEXT DEFAULT 'unit'`, (err) => { });
 
       // ORDERS
       sqliteDb.run(`CREATE TABLE IF NOT EXISTS orders (

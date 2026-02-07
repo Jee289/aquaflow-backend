@@ -152,26 +152,36 @@ const OrderWater: React.FC = () => {
     let discountApplied = 0;
     const items: OrderItem[] = [];
 
+    // Step 1: Calculate totals and collect barrel products
+    let totalBarrelQty = 0;
+    const barrelProducts: { product: Product; qty: number }[] = [];
+
     products.forEach(p => {
       const qty = quantities[p.id] || 0;
       if (qty > 0) {
         subtotal += p.price * qty;
 
         if (isBarrel(p)) {
+          totalBarrelQty += qty;
+          barrelProducts.push({ product: p, qty });
           if (Number(user.orderCount) > 0) delivery = 10;
-
-          // STRICT LOGIC: 
-          // 1. Only exchange Pani Gadi barrels. Return qty cannot exceed orders or owned barrels.
-          const maxPossibleRefill = Math.min(qty, user.activeBarrels || 0);
-          const actualReturns = Math.min(barrelReturns, maxPossibleRefill);
-
-          const chargeQty = Math.max(0, qty - actualReturns);
-          // Use product's security fee or fallback to 200
-          const feePerUnit = p.securityFee !== undefined ? Number(p.securityFee) : 200;
-          securityFees += chargeQty * feePerUnit;
         }
+
         items.push({ ...p, quantity: qty } as OrderItem);
       }
+    });
+
+    // Step 2: Calculate global barrel returns
+    const effectiveReturns = Math.min(barrelReturns, Math.min(totalBarrelQty, user.activeBarrels || 0));
+    let remainingToCharge = totalBarrelQty - effectiveReturns;
+
+    // Step 3: Distribute charges across barrel products
+    barrelProducts.forEach(({ product, qty }) => {
+      const chargeQty = Math.min(qty, remainingToCharge);
+      // Fallback to 200 if fee is 0 or undefined (assuming user error for barrels)
+      const feePerUnit = (product.securityFee !== undefined && Number(product.securityFee) > 0) ? Number(product.securityFee) : 200;
+      securityFees += chargeQty * feePerUnit;
+      remainingToCharge -= chargeQty;
     });
 
     if (useReferralBonus) discountApplied = Math.min(Number(user.referralBalance || 0), 25);
@@ -441,7 +451,8 @@ const OrderWater: React.FC = () => {
                           <span className="font-black text-xl w-4 text-center text-white">{barrelReturns}</span>
                           <button
                             onClick={() => {
-                              const maxPossible = Math.min(quantities[p.id] || 0, user?.activeBarrels || 0);
+                              const totalBarrels = products.filter(isBarrel).reduce((sum, prod) => sum + (quantities[prod.id] || 0), 0);
+                              const maxPossible = Math.min(totalBarrels, user?.activeBarrels || 0);
                               setBarrelReturns(Math.min(barrelReturns + 1, maxPossible));
                             }}
                             className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center font-black text-white shadow-sm hover:bg-blue-500"
@@ -451,7 +462,7 @@ const OrderWater: React.FC = () => {
                     </div>
                     <div className="bg-slate-900/50 p-3 rounded-xl border border-white/5 space-y-1">
                       <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest italic leading-tight">Authentic Pani Gadi Units Only</p>
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Deposit: ₹{p.securityFee !== undefined ? p.securityFee : 200} / Unit (Refundable)</p>
+                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Deposit: ₹{(p.securityFee !== undefined && Number(p.securityFee) > 0) ? p.securityFee : 200} / Unit (Refundable)</p>
                     </div>
                   </div>
                   <Droplets size={80} className="absolute -right-6 -bottom-6 text-white/5 rotate-12" />
