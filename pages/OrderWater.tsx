@@ -50,7 +50,7 @@ const OrderWater: React.FC = () => {
   const { user, updateUser } = useAuth();
   const navigate = useNavigate();
 
-  // Helper functions defined early to be used in logic (Permissive Mode v3.0)
+  // Helper functions defined early to be used in logic (Permissive Mode v3.1)
   const isBarrel = (p: Product) => {
     // Explicit checks
     if ((p.image || '') === 'style:barrel') return true;
@@ -145,6 +145,14 @@ const OrderWater: React.FC = () => {
     return options;
   }, [minDeliveryDate]);
 
+  // Auto-maximize returns (UX Requirement v3.1)
+  useEffect(() => {
+    if (!user) return;
+    const totalQty = products.filter(isBarrel).reduce((acc, p) => acc + (quantities[p.id] || 0), 0);
+    const usersBarrels = Number(user.activeBarrels || 0);
+    setBarrelReturns(Math.min(totalQty, usersBarrels));
+  }, [quantities, products, user]);
+
   const filteredProducts = products.filter(p =>
     activeTab === 'REGULAR' ? (p.type === 'REGULAR' || p.type === 'ACCESSORY') : p.type === 'PREMIUM'
   );
@@ -189,7 +197,7 @@ const OrderWater: React.FC = () => {
     });
 
     // Step 2: Calculate global barrel returns
-    const effectiveReturns = Math.min(barrelReturns, Math.min(totalBarrelQty, user.activeBarrels || 0));
+    const effectiveReturns = Math.min(barrelReturns, Math.min(totalBarrelQty, Number(user.activeBarrels || 0)));
     let remainingToCharge = totalBarrelQty - effectiveReturns;
 
     // Step 3: Distribute charges across barrel products
@@ -385,7 +393,7 @@ const OrderWater: React.FC = () => {
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-slate-50 rounded-2xl transition text-slate-400 border border-transparent hover:border-slate-100"><ChevronLeft size={24} /></button>
           <h1 className="text-xl font-black tracking-tighter uppercase italic flex items-center gap-2">
-            Order Water <span className="text-[9px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded-full not-italic">v3.0</span>
+            Order Water <span className="text-[9px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded-full not-italic">v3.1 (Auto)</span>
           </h1>
         </div>
         <div className="bg-indigo-950 text-white px-5 py-2.5 rounded-2xl shadow-xl shadow-indigo-900/10">
