@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.env
+*.db
+server/.env
+server/panigadi.db
+server/equaflow.db
+.gemini/

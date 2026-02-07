@@ -587,6 +587,48 @@ const AdminDashboard: React.FC = () => {
                           ))}
                         </div>
                       </div>
+
+                      <div className="space-y-4">
+                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Product Category</label>
+                        <div className="flex gap-4">
+                          {[
+                            { id: 'REGULAR', label: 'Standard' },
+                            { id: 'PREMIUM', label: 'Case Pack' },
+                            { id: 'ACCESSORY', label: 'Accessory' }
+                          ].map(t => (
+                            <button
+                              key={t.id}
+                              onClick={() => setNewProduct({ ...newProduct, type: t.id as any })}
+                              className={`flex-1 py-3 rounded-2xl border-2 text-[8px] font-black uppercase tracking-widest transition-all 
+                                ${newProduct.type === t.id ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg' : 'border-slate-100 bg-white text-slate-400 hover:border-indigo-200'}`}
+                            >
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-5">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Security Fee (₹)</label>
+                          <input
+                            type="number"
+                            className="w-full p-5 bg-indigo-50 border border-indigo-100 rounded-3xl font-black text-indigo-950 outline-none focus:border-indigo-600 transition shadow-inner"
+                            value={newProduct.securityFee}
+                            onChange={e => setNewProduct({ ...newProduct, securityFee: Number(e.target.value) })}
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Public Note</label>
+                          <input
+                            className="w-full p-5 bg-indigo-50 border border-indigo-100 rounded-3xl font-black text-indigo-950 outline-none focus:border-indigo-600 transition shadow-inner"
+                            value={newProduct.note}
+                            onChange={e => setNewProduct({ ...newProduct, note: e.target.value })}
+                            placeholder="Optional info..."
+                          />
+                        </div>
+                      </div>
                       <button
                         onClick={handleAddProduct}
                         className="w-full bg-indigo-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-[0.3em] shadow-2xl mt-6 hover:bg-indigo-700 transition-all border-b-4 border-indigo-400 active:scale-95"

@@ -14,10 +14,12 @@ router.get('/products', async (req, res) => {
 
 // Create Product
 router.post('/products', async (req, res) => {
-    const { id, name, price, stock, unit, image } = req.body;
+    const { id, name, price, stock, unit, image, type, securityFee, note } = req.body;
     try {
-        await db.query("INSERT INTO products (id, name, price, stock, unit, image) VALUES ($1, $2, $3, $4, $5, $6)",
-            [id, name, price, stock, unit, image]);
+        await db.query(
+            "INSERT INTO products (id, name, price, stock, unit, image, type, securityFee, note) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            [id, name, price, stock, unit || 'unit', image, type || 'REGULAR', securityFee || 0, note || '']
+        );
         res.json({ success: true, id });
     } catch (err) {
         res.status(500).json({ error: err.message });
