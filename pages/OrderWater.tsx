@@ -51,7 +51,7 @@ const OrderWater: React.FC = () => {
   const navigate = useNavigate();
 
   // Helper functions defined early to be used in logic
-  const isBarrel = (p: Product) => p.image === 'style:barrel' || p.unit === 'barrel' || p.id === '20L';
+  const isBarrel = (p: Product) => (p.image || '') === 'style:barrel' || (p.unit || '') === 'barrel' || p.id === '20L';
   const isDispenser = (p: Product) => p.image === 'style:dispenser' || p.id === 'DISP';
   const isPackaged = (p: Product) => p.image === 'style:bottle' || p.unit === 'case' || p.id === '1L';
 
@@ -367,7 +367,9 @@ const OrderWater: React.FC = () => {
       <div className="p-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/80 backdrop-blur-xl z-30">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-slate-50 rounded-2xl transition text-slate-400 border border-transparent hover:border-slate-100"><ChevronLeft size={24} /></button>
-          <h1 className="text-xl font-black tracking-tighter uppercase italic">Secure <span className="text-blue-600">Order</span></h1>
+          <h1 className="text-xl font-black tracking-tighter uppercase italic flex items-center gap-2">
+            Order Water <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-1 rounded-full not-italic">v2.3</span>
+          </h1>
         </div>
         <div className="bg-indigo-950 text-white px-5 py-2.5 rounded-2xl shadow-xl shadow-indigo-900/10">
           <p className="text-[8px] font-black uppercase text-slate-500 leading-none mb-1 tracking-widest text-center">Wallet</p>
@@ -525,6 +527,16 @@ const OrderWater: React.FC = () => {
         </div>
       </div>
 
+      {user?.role === 'OWNER' && (
+        <div className="p-4 bg-slate-100 text-[10px] font-mono whitespace-pre-wrap break-all border-t border-slate-200" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+          <p className="font-bold mb-2">DEBUG INFO (Owner Only):</p>
+          <p>User Role: {user.role}</p>
+          <p>Active Barrels: {user.activeBarrels}</p>
+          <p>Barrel Returns: {barrelReturns}</p>
+          <p>Products (First 3): {JSON.stringify(products.slice(0, 3), null, 2)}</p>
+        </div>
+      )}
+
       {summary.total >= 0 && (Object.values(quantities).some((q: number) => q > 0)) && (
         <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-6 bg-white/80 backdrop-blur-xl border-t border-slate-100 z-40 rounded-t-[3rem] shadow-[0_-20px_50px_rgba(0,0,0,0.05)]">
           <div className="flex justify-between items-center gap-6">
@@ -566,8 +578,10 @@ const OrderWater: React.FC = () => {
               </div>
             ) : (
               <>
-                <div className="flex justify-between items-center mb-10">
-                  <h2 className="text-3xl font-black text-slate-950 tracking-tighter uppercase italic">Order <span className="text-blue-600">Invoice</span></h2>
+                <div className="flex justify-between items-center mb-8">
+                  <div>
+                    <h2 className="text-3xl font-black text-slate-950 tracking-tighter uppercase italic">Order <span className="text-blue-600">Invoice</span></h2>
+                  </div>
                   <button onClick={() => setShowCheckout(false)} className="p-3 bg-slate-50 text-slate-400 rounded-full hover:bg-rose-50 hover:text-rose-600 transition-colors border border-slate-100"><X size={24} /></button>
                 </div>
 
