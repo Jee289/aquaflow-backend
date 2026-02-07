@@ -50,6 +50,11 @@ const OrderWater: React.FC = () => {
   const { user, updateUser } = useAuth();
   const navigate = useNavigate();
 
+  // Helper functions defined early to be used in logic
+  const isBarrel = (p: Product) => p.image === 'style:barrel' || p.unit === 'barrel' || p.id === '20L';
+  const isDispenser = (p: Product) => p.image === 'style:dispenser' || p.id === 'DISP';
+  const isPackaged = (p: Product) => p.image === 'style:bottle' || p.unit === 'case' || p.id === '1L';
+
   const [products, setProducts] = useState<Product[]>([]);
   const [address, setAddress] = useState<any>(null); // Fetch address or use local storage
 
@@ -83,8 +88,8 @@ const OrderWater: React.FC = () => {
   const now = new Date();
   const currentHour = now.getHours();
 
-  const jarQty = quantities['20L'] || 0;
-  const bottleCaseQty = quantities['1L'] || 0;
+  const jarQty = products.filter(isBarrel).reduce((sum, p) => sum + (quantities[p.id] || 0), 0);
+  const bottleCaseQty = products.filter(isPackaged).reduce((sum, p) => sum + (quantities[p.id] || 0), 0);
   const isBulkOrder = jarQty >= 5 || bottleCaseQty >= 5;
 
   let isSameDayAvailable = false;
@@ -137,6 +142,7 @@ const OrderWater: React.FC = () => {
     setQuantities(prev => ({ ...prev, [product.id]: newQty }));
   };
 
+
   const summary = useMemo(() => {
     if (!user) return { items: [], subtotal: 0, delivery: 0, securityFees: 0, discountApplied: 0, total: 0 };
 
@@ -150,7 +156,8 @@ const OrderWater: React.FC = () => {
       const qty = quantities[p.id] || 0;
       if (qty > 0) {
         subtotal += p.price * qty;
-        if (p.id === '20L') {
+
+        if (isBarrel(p)) {
           if (Number(user.orderCount) > 0) delivery = 10;
 
           // STRICT LOGIC: 
@@ -159,7 +166,9 @@ const OrderWater: React.FC = () => {
           const actualReturns = Math.min(barrelReturns, maxPossibleRefill);
 
           const chargeQty = Math.max(0, qty - actualReturns);
-          securityFees += chargeQty * 200;
+          // Use product's security fee or fallback to 200
+          const feePerUnit = p.securityFee !== undefined ? Number(p.securityFee) : 200;
+          securityFees += chargeQty * feePerUnit;
         }
         items.push({ ...p, quantity: qty } as OrderItem);
       }
@@ -179,7 +188,7 @@ const OrderWater: React.FC = () => {
     setIsProcessing(true);
 
     const orderId = `AQ-${Math.floor(100000 + Math.random() * 900000)}`;
-    const p20LQty = quantities['20L'] || 0;
+    const barrelQty = products.filter(isBarrel).reduce((acc, p) => acc + (quantities[p.id] || 0), 0);
 
     // Define createOrderInDb function first
     const createOrderInDb = () => {
@@ -200,7 +209,7 @@ const OrderWater: React.FC = () => {
         city: user.city,
         address,
         paymentMethod,
-        barrelReturns: p20LQty > 0 ? Math.min(barrelReturns, Math.min(p20LQty, user.activeBarrels || 0)) : 0,
+        barrelReturns: barrelQty > 0 ? Math.min(barrelReturns, Math.min(barrelQty, user.activeBarrels || 0)) : 0,
         timestamp: Date.now()
       };
 
@@ -415,7 +424,7 @@ const OrderWater: React.FC = () => {
                 </div>
               </div>
 
-              {p.id === '20L' && quantities['20L'] > 0 && (
+              {isBarrel(p) && quantities[p.id] > 0 && (
                 <div className="mt-8 bg-slate-950 p-6 rounded-[2rem] border-b-4 border-blue-600 relative overflow-hidden group/exchange">
                   <div className="relative z-10">
                     <div className="flex items-center justify-between mb-4">
@@ -432,7 +441,7 @@ const OrderWater: React.FC = () => {
                           <span className="font-black text-xl w-4 text-center text-white">{barrelReturns}</span>
                           <button
                             onClick={() => {
-                              const maxPossible = Math.min(quantities['20L'] || 0, user?.activeBarrels || 0);
+                              const maxPossible = Math.min(quantities[p.id] || 0, user?.activeBarrels || 0);
                               setBarrelReturns(Math.min(barrelReturns + 1, maxPossible));
                             }}
                             className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center font-black text-white shadow-sm hover:bg-blue-500"
@@ -442,14 +451,14 @@ const OrderWater: React.FC = () => {
                     </div>
                     <div className="bg-slate-900/50 p-3 rounded-xl border border-white/5 space-y-1">
                       <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest italic leading-tight">Authentic Pani Gadi Units Only</p>
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Deposit: ₹200 / Unit (Refundable)</p>
+                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Deposit: ₹{p.securityFee !== undefined ? p.securityFee : 200} / Unit (Refundable)</p>
                     </div>
                   </div>
                   <Droplets size={80} className="absolute -right-6 -bottom-6 text-white/5 rotate-12" />
                 </div>
               )}
 
-              {p.id === 'DISP' && (
+              {isDispenser(p) && (
                 <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">Manual pump unit. Non-refundable disposal item.</p>
                 </div>

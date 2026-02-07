@@ -61,6 +61,7 @@ export interface Product {
   image: string;
   stock: number;
   note: string;
+  unit?: string;
 }
 
 export interface OrderItem extends Product {
