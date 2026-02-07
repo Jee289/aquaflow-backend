@@ -2,11 +2,13 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 
-const APP_ID = process.env.CASHFREE_APP_ID || 'TEST_PLACEHOLDER';
-const SECRET_KEY = process.env.CASHFREE_SECRET_KEY || 'SECRET_PLACEHOLDER';
-const ENV = process.env.NODE_ENV === 'production' ? 'PROD' : 'TEST';
+const APP_ID = process.env.CASHFREE_APP_ID;
+const SECRET_KEY = process.env.CASHFREE_SECRET_KEY;
+// Force TEST mode if App ID starts with TEST or if NODE_ENV isn't production
+const IS_PROD = process.env.NODE_ENV === 'production' && !APP_ID?.startsWith('TEST');
+const BASE_URL = IS_PROD ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
 
-const BASE_URL = ENV === 'TEST' ? 'https://sandbox.cashfree.com/pg' : 'https://api.cashfree.com/pg';
+console.log(`[Cashfree] Initialized in ${IS_PROD ? 'PRODUCTION' : 'SANDBOX'} mode`);
 
 router.post('/create-order', async (req, res) => {
     const { orderId, amount, customerId, customerPhone, customerName, customerEmail } = req.body;

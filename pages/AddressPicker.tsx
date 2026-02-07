@@ -1,10 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { Address } from '../types';
 import { ChevronLeft, MapPin, Navigation, Info } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+
+// Fix for default Leaflet icon not showing in React
+const DefaultIcon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+function LocationMarker({ coords, setCoords }: { coords: { lat: number, lng: number }, setCoords: (c: { lat: number, lng: number }) => void }) {
+  const markerRef = useRef<L.Marker>(null);
+  const eventHandlers = useMemo(
+    () => ({
+      dragend() {
+        const marker = markerRef.current;
+        if (marker != null) {
+          setCoords(marker.getLatLng());
+        }
+      },
+    }),
+    [setCoords],
+  );
+
+  return (
+    <Marker
+      draggable={true}
+      eventHandlers={eventHandlers}
+      position={[coords.lat, coords.lng]}
+      ref={markerRef}>
+    </Marker>
+  );
+}
 
 const AddressPicker: React.FC = () => {
   const navigate = useNavigate();
@@ -51,8 +87,6 @@ const AddressPicker: React.FC = () => {
     // Save to Backend
     api.patch(`/users/${user.uid}`, { address: newAddress })
       .then(() => {
-        // Also update local storage for fallback or context sync if needed, 
-        // but backend is primary now.
         localStorage.setItem('aqua_address', JSON.stringify(newAddress));
         navigate('/dashboard');
       })
@@ -72,18 +106,16 @@ const AddressPicker: React.FC = () => {
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar pb-10">
-        {/* Map Simulator */}
-        <div className="h-80 bg-slate-50 relative overflow-hidden m-5 rounded-[3rem] border border-slate-100 shadow-inner group">
+        {/* Map Container */}
+        <div className="h-[400px] bg-slate-50 relative overflow-hidden m-5 rounded-[3rem] border border-slate-100 shadow-inner group z-10">
           {coords ? (
-            <div className="w-full h-full flex items-center justify-center bg-blue-50/50 animate-in fade-in duration-700">
-              <div className="text-center p-10 bg-white rounded-[3rem] shadow-2xl border border-blue-100 scale-105 relative overflow-hidden">
-                <MapPin size={56} className="text-rose-600 animate-bounce mx-auto relative z-10" />
-                <p className="mt-6 font-black text-slate-950 text-base tracking-tight relative z-10">Point Identified</p>
-                <p className="text-[9px] text-blue-600 font-black uppercase tracking-[0.2em] mt-1 relative z-10">Satellite Precision: High</p>
-                <button onClick={() => setCoords(null)} className="mt-6 text-[10px] font-black text-slate-400 hover:text-rose-600 transition uppercase tracking-widest underline decoration-2 underline-offset-4 relative z-10">Reset Signal</button>
-                <div className="absolute right-0 top-0 w-32 h-32 bg-blue-50 rounded-full blur-3xl opacity-50"></div>
-              </div>
-            </div>
+            <MapContainer center={[coords.lat, coords.lng]} zoom={15} scrollWheelZoom={true} style={{ height: '100%', width: '100%' }}>
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <LocationMarker coords={coords} setCoords={setCoords} />
+            </MapContainer>
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center p-10 text-center">
               <div className="bg-white p-6 rounded-[2rem] shadow-xl mb-8 border border-slate-50 group-hover:scale-110 transition-transform duration-500"><Navigation className="text-blue-600" size={40} /></div>
@@ -96,6 +128,11 @@ const AddressPicker: React.FC = () => {
               >
                 {locating ? <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/20 border-t-white"></div> : <><MapPin size={20} className="text-blue-500" /> Initialize Geofence</>}
               </button>
+            </div>
+          )}
+          {coords && (
+            <div className="absolute top-4 right-4 z-[1000] bg-white/90 backdrop-blur-md p-2 rounded-xl shadow-lg border border-slate-100">
+              <button onClick={() => setCoords(null)} className="text-[8px] font-black text-rose-500 uppercase tracking-widest">Reset Map</button>
             </div>
           )}
         </div>

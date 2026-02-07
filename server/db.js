@@ -444,6 +444,20 @@ const initDb = async () => {
             )`);
       sqliteDb.run(`ALTER TABLE otp_verifications ADD COLUMN verificationId TEXT`, (err) => { });
 
+      // ADVERTISEMENTS
+      sqliteDb.run(`CREATE TABLE IF NOT EXISTS advertisements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                imageUrl TEXT NOT NULL,
+                targetUrl TEXT,
+                position TEXT DEFAULT 'dashboard',
+                city TEXT,
+                state TEXT,
+                isActive INTEGER DEFAULT 1,
+                expiryDate INTEGER,
+                createdAt INTEGER
+            )`);
+
       console.log("SQLite Tables Initialized");
     });
   }
