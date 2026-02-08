@@ -552,7 +552,7 @@ const OrderWater: React.FC = () => {
         </div>
       </div>
 
-      {user?.role === 'OWNER' && (
+      {true && (
         <div className="p-4 bg-slate-100 text-[10px] font-mono whitespace-pre-wrap break-all border-t border-slate-200" style={{ maxHeight: '200px', overflowY: 'auto' }}>
           <p className="font-bold mb-2">DEBUG INFO (Owner Only):</p>
           <p>User Role: {user.role}</p>
