@@ -103,7 +103,9 @@ const AdminDashboard: React.FC = () => {
   }, [adminDistrict]); // Only re-run if district changes
 
 
-  const totalConnections = districtUsers.reduce((sum, u) => sum + (u.activeBarrels || 0), 0);
+  const activeCustomers = districtUsers.filter(u => u.role === 'USER');
+  const totalConnections = activeCustomers.reduce((sum, u) => sum + (u.activeBarrels || 0), 0);
+  const activeUsersCount = totalConnections; // User requested: active users = no of active barrels
   const refundLiability = totalConnections * 200;
   const pendingOrdersCount = orders.filter(o => o.status === 'pending').length;
 
@@ -257,8 +259,8 @@ const AdminDashboard: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 w-full lg:w-auto">
             <div className="bg-white p-7 rounded-[2.5rem] shadow-sm border border-slate-100 min-w-[180px] group hover:shadow-xl transition-all relative overflow-hidden">
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.2em] mb-2 relative z-10">Active Flux</p>
-              <h3 className="text-3xl font-black tracking-tighter relative z-10 text-indigo-950">{totalConnections} <span className="text-xs text-indigo-200 font-bold uppercase italic ml-1">Units</span></h3>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.2em] mb-2 relative z-10">Active Users</p>
+              <h3 className="text-3xl font-black tracking-tighter relative z-10 text-indigo-950">{activeUsersCount} <span className="text-xs text-indigo-200 font-bold uppercase italic ml-1">Units</span></h3>
               <div className="absolute right-[-10%] bottom-[-10%] w-20 h-20 bg-indigo-50 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
             </div>
             <div className="bg-white p-7 rounded-[2.5rem] shadow-sm border border-slate-100 min-w-[180px] group hover:shadow-xl transition-all relative overflow-hidden">
@@ -1114,10 +1116,10 @@ const AdminDashboard: React.FC = () => {
                         <div className="p-5 bg-indigo-50/50 rounded-3xl border border-indigo-100 flex flex-col justify-between">
                           <p className="text-[8px] font-black uppercase text-indigo-600 tracking-[0.2em] mb-4">Postal Bounds</p>
                           <div className="flex flex-wrap gap-1.5">
-                            {(zone.postalcodes || []).map((code: string, idx: number) => (
+                            {(zone.postalCodes || []).map((code: string, idx: number) => (
                               <span key={idx} className="text-[10px] font-black text-indigo-800 bg-white px-3 py-1 rounded-xl shadow-sm border border-indigo-100">{code}</span>
                             ))}
-                            {(zone.postalcodes || []).length === 0 && <span className="text-[10px] font-black text-indigo-300 uppercase italic">Unbounded</span>}
+                            {(zone.postalCodes || []).length === 0 && <span className="text-[10px] font-black text-indigo-300 uppercase italic">Unbounded</span>}
                           </div>
                         </div>
                         <div className="p-5 bg-emerald-50/50 rounded-3xl border border-emerald-100 flex flex-col justify-between">

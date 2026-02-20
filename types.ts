@@ -87,6 +87,7 @@ export interface Order {
   paymentMethod: 'UPI' | 'WALLET';
   barrelReturns?: number;
   assignedAgentId?: string; // ID of the agent assigned to this order
+  couponId?: number; // ID of the coupon used for this order
   timestamp: number;
 }
 

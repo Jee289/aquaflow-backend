@@ -133,20 +133,28 @@ router.post('/orders', async (req, res) => {
         const { zone, agentId } = await detectZoneAndAssign(order);
         if (zone) order.detectedZone = zone;
         if (agentId && !order.assignedAgentId) {
-            // Only auto-assign if not manually assigned
             order.assignedAgentId = agentId;
-            console.log(`[Auto-Assign] Order ${order.id} → Zone: ${zone}, Agent: ${agentId}`);
         }
     } catch (e) {
         console.error('Zone detection failed:', e.message);
-        // Continue without zone assignment
+    }
+
+    // Backend Enforcement: Free Delivery for First 3 Orders
+    try {
+        const { rows: uRows } = await db.query("SELECT order_count FROM users WHERE uid = $1", [order.userId]);
+        if (uRows.length > 0 && Number(uRows[0].orderCount || 0) < 3) {
+            order.deliveryCharge = 0;
+            console.log(`[Backend Enforcement] Free Delivery applied for user ${order.userId} (Order #${uRows[0].orderCount})`);
+        }
+    } catch (e) {
+        console.error('Free delivery check failed:', e.message);
     }
 
     const sql = `INSERT INTO orders (
         id, userId, userName, userPhone, totalAmount, status, deliveryDate,
         district, state, city, items, address, paymentMethod, deliveryCharge,
-        barrelReturns, timestamp, assignedAgentId, detectedZone
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`;
+        barrelReturns, timestamp, assignedAgentId, detectedZone, coupon_id, discount_applied
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING *`;
 
     const values = [
         order.id, order.userId, order.userName, order.userPhone,
@@ -155,11 +163,18 @@ router.post('/orders', async (req, res) => {
         JSON.stringify(order.items), JSON.stringify(order.address),
         order.paymentMethod, order.deliveryCharge || 0,
         order.barrelReturns || 0, order.timestamp || Date.now(),
-        order.assignedAgentId || null, order.detectedZone || null
+        order.assignedAgentId || null, order.detectedZone || null,
+        order.couponId || null, order.discountApplied || 0
     ];
 
     try {
         const { rows } = await db.query(sql, values);
+
+        // Increment Coupon Usage Count
+        if (order.couponId) {
+            await db.query("UPDATE coupons SET usage_count = usage_count + 1 WHERE id = $1", [order.couponId]);
+        }
+
         res.json(rows[0]);
     } catch (err) {
         console.error('Order creation error:', err);
@@ -210,26 +225,51 @@ router.patch('/orders/:id', async (req, res) => {
         updateQuery += updates.join(', ');
         updateQuery += ` WHERE id = $${pIdx}`;
         params.push(req.params.id);
-
         await db.query(updateQuery, params);
 
         // Logic for Active Barrels update & Inventory Replenishment on Delivery
         if (status === 'delivered' && order.status !== 'delivered') {
-            const jarItem = (order.items || []).find(i => i.id === '20L');
-            if (jarItem && jarItem.quantity > 0) {
-                const returned = order.barrelReturns || 0;
-                const netIncrease = Math.max(0, jarItem.quantity - returned);
+            console.log(`[Inventory] Processing replenishment for order ${order.id}`);
 
-                // Add 20L (20000ml) per jar delivered
-                const waterAdded = jarItem.quantity * 20000;
+            let items = order.items;
+            if (typeof items === 'string') {
+                try { items = JSON.parse(items); } catch (e) { items = []; }
+            }
 
-                await db.query(
-                    "UPDATE users SET activeBarrels = activeBarrels + $1, home_stock = home_stock + $2, order_count = order_count + 1 WHERE uid = $3",
-                    [netIncrease, waterAdded, order.userId]
-                );
-                console.log(`Inventory Replenished: +${waterAdded}ml and +1 order_count for ${order.userId}`);
+            // Map items to find 20L jar (robust search)
+            const jarItem = (items || []).find(i =>
+                String(i.id).toUpperCase() === '20L' ||
+                String(i.name).toUpperCase().includes('20L') ||
+                i.image === 'style:barrel'
+            );
+
+            if (jarItem) {
+                const qty = Number(jarItem.quantity || 0);
+                const returned = Number(order.barrelReturns || 0);
+                const netIncrease = Math.max(0, qty - returned);
+                const waterAdded = qty * 20000; // 20L = 20,000ml
+
+                console.log(`[Inventory] Jar Found: Qty ${qty}, Returned ${returned}, Net Barrels +${netIncrease}, Water +${waterAdded}ml`);
+
+                try {
+                    // Update User Profile (Using snake_case for PostgreSQL compatibility if columns were created that way)
+                    // We update both common variations to be safe, or just rely on PG unquoted behavior.
+                    await db.query(`
+                        UPDATE users 
+                        SET activeBarrels = activeBarrels + $1, 
+                            home_stock = COALESCE(home_stock, 0) + $2, 
+                            order_count = order_count + 1 
+                        WHERE uid = $3
+                    `, [netIncrease, waterAdded, order.userId]);
+
+                    console.log(`[Inventory] SUCCESS: User ${order.userId} updated.`);
+                } catch (dbErr) {
+                    console.error(`[Inventory] DB UPDATE FAILED:`, dbErr.message);
+                    // We don't throw here to avoid blocking status update, but it's captured in logs.
+                }
             } else {
-                // Even if no 20L jars, increment order count for free delivery logic
+                console.log(`[Inventory] No refillable units found in order items.`);
+                // Still increment order count
                 await db.query("UPDATE users SET order_count = order_count + 1 WHERE uid = $1", [order.userId]);
             }
         }
@@ -585,8 +625,10 @@ router.get('/zones', async (req, res) => {
 // Create Zone
 router.post('/zones', async (req, res) => {
     const { district, state, city, name, description, landmarks, postalCodes } = req.body;
+    console.log('[POST /zones] Body:', req.body);
 
     if (!district || !state || !city || !name) {
+        console.log('[POST /zones] FAILED: Missing fields', { district, state, city, name });
         return res.status(400).json({ error: 'Missing required fields' });
     }
 

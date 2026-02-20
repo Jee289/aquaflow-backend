@@ -36,6 +36,13 @@ export default function OrderHistory() {
   const dateOptions = useMemo(() => {
     const options = [];
     const start = new Date();
+    const currentHour = start.getHours();
+
+    // If after 12 PM, same day pickup is not available
+    if (currentHour >= 12) {
+      start.setDate(start.getDate() + 1);
+    }
+
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
@@ -93,7 +100,7 @@ export default function OrderHistory() {
       <div className="p-6 bg-white border-b border-slate-100 space-y-6">
         <button
           onClick={() => (user.activeBarrels || 0) > 0 ? setShowReturn(true) : alert("No active connections found.")}
-          className="w-full bg-indigo-950 text-white p-6 rounded-[2.5rem] flex items-center justify-between shadow-2xl shadow-indigo-900/10 active:scale-95 transition-all group relative overflow-hidden"
+          className="w-full bg-indigo-600 text-white p-6 rounded-[2.5rem] flex items-center justify-between shadow-xl shadow-indigo-100 active:scale-95 transition-all group relative overflow-hidden"
         >
           <div className="flex items-center gap-4 z-10">
             <div className="bg-indigo-600 p-3 rounded-2xl shadow-lg group-hover:rotate-6 transition-transform"><Box size={22} /></div>
@@ -174,10 +181,10 @@ export default function OrderHistory() {
       </div>
 
       {showReturn && (
-        <div className="fixed inset-0 bg-slate-950/40 z-50 flex items-end justify-center backdrop-blur-md">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center backdrop-blur-md">
           <div className="bg-white w-full max-w-md rounded-t-[3.5rem] p-10 animate-in slide-in-from-bottom-10 duration-500 shadow-2xl border-t border-white">
             <div className="flex justify-between items-center mb-8">
-              <h2 className="text-2xl font-black tracking-tighter uppercase italic text-slate-950">Return <span className="text-indigo-600">Vault</span></h2>
+              <h2 className="text-2xl font-black tracking-tighter uppercase italic text-slate-950">Jar <span className="text-indigo-600">Return</span></h2>
               <button onClick={() => setShowReturn(false)} className="p-3 bg-slate-50 text-slate-400 rounded-full hover:bg-rose-50 hover:text-rose-600 transition-colors border border-slate-100"><X size={24} /></button>
             </div>
 
@@ -212,7 +219,7 @@ export default function OrderHistory() {
               </div>
 
               <div className="flex gap-4 pt-4">
-                <button onClick={handleReturnConfirm} className="w-full bg-slate-950 text-white font-black py-6 rounded-[2rem] shadow-2xl uppercase tracking-[0.2em] text-[11px] hover:bg-black transition-all active:scale-95">Schedule Vault Retrieval</button>
+                <button onClick={handleReturnConfirm} className="w-full bg-indigo-600 text-white font-black py-6 rounded-[2rem] shadow-xl shadow-indigo-100 uppercase tracking-[0.2em] text-[11px] hover:bg-indigo-700 transition-all active:scale-95">Schedule Pickup</button>
               </div>
               <p className="text-[8px] text-center text-slate-400 font-black uppercase tracking-[0.4em] flex items-center justify-center gap-3"><ShieldCheck size={14} className="text-blue-600" /> Professional Pickup Service</p>
             </div>

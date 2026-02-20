@@ -85,6 +85,17 @@ const OrderWater: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState<string>('');
   const [useReferralBonus, setUseReferralBonus] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [couponError, setCouponError] = useState('');
+  const [showCouponDialog, setShowCouponDialog] = useState(false);
+  const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (showCouponDialog) {
+      api.get('/coupons?publicView=true').then(res => setAvailableCoupons(res.data)).catch(console.error);
+    }
+  }, [showCouponDialog]);
 
   useEffect(() => {
     // Load products
@@ -167,9 +178,30 @@ const OrderWater: React.FC = () => {
     setQuantities(prev => ({ ...prev, [product.id]: newQty }));
   };
 
+  const validateCoupon = async () => {
+    if (!couponCode) return;
+    setCouponError('');
+    try {
+      // Use subtotal as the baseline for coupon minimum order value (Excluding Security Deposits)
+      const baseline = summary.subtotal;
+      const res = await api.post('/coupons/validate', {
+        code: couponCode,
+        totalAmount: baseline,
+        userId: user?.uid,
+        items: summary.items
+      });
+      if (res.data.success) {
+        setAppliedCoupon(res.data);
+      }
+    } catch (err: any) {
+      setCouponError(err.response?.data?.error || 'Invalid Coupon');
+      setAppliedCoupon(null);
+    }
+  };
+
 
   const summary = useMemo(() => {
-    if (!user) return { items: [], subtotal: 0, delivery: 0, securityFees: 0, discountApplied: 0, total: 0 };
+    if (!user) return { items: [], subtotal: 0, delivery: 0, securityFees: 0, discountApplied: 0, couponDiscount: 0, total: 0, couponId: null };
 
     let subtotal = 0;
     let delivery = 0;
@@ -189,7 +221,7 @@ const OrderWater: React.FC = () => {
         if (isBarrel(p)) {
           totalBarrelQty += qty;
           barrelProducts.push({ product: p, qty });
-          if (Number(user.orderCount) > 0) delivery = 10;
+          if (Number(user.orderCount || 0) >= 3) delivery = 10;
         }
 
         items.push({ ...p, quantity: qty } as OrderItem);
@@ -210,9 +242,10 @@ const OrderWater: React.FC = () => {
     });
 
     if (useReferralBonus) discountApplied = Math.min(Number(user.referralBalance || 0), 25);
-    const total = subtotal + delivery + securityFees - discountApplied;
-    return { items, subtotal, delivery, securityFees, discountApplied, total };
-  }, [user, products, quantities, barrelReturns, useReferralBonus]);
+    const couponDiscount = appliedCoupon ? Number(appliedCoupon.discount) : 0;
+    const total = Math.max(0, subtotal + delivery + securityFees - discountApplied - couponDiscount);
+    return { items, subtotal, delivery, securityFees, discountApplied, couponDiscount, total, couponId: appliedCoupon?.couponId };
+  }, [user, products, quantities, barrelReturns, useReferralBonus, appliedCoupon]);
 
   const handleOrder = async (appId?: string) => {
     if (!user) return;
@@ -236,7 +269,8 @@ const OrderWater: React.FC = () => {
         totalAmount: summary.total,
         deliveryCharge: summary.delivery,
         securityFees: summary.securityFees,
-        discountApplied: summary.discountApplied,
+        discountApplied: summary.discountApplied + summary.couponDiscount,
+        couponId: summary.couponId || undefined,
         status: 'pending',
         deliveryDate,
         district: user.district || 'Unknown',
@@ -356,7 +390,8 @@ const OrderWater: React.FC = () => {
         totalAmount: summary.total,
         deliveryCharge: summary.delivery,
         securityFees: summary.securityFees,
-        discountApplied: summary.discountApplied,
+        discountApplied: summary.discountApplied + summary.couponDiscount,
+        couponId: summary.couponId || undefined,
         status: 'pending',
         deliveryDate,
         district: user.district || 'Unknown',
@@ -396,8 +431,8 @@ const OrderWater: React.FC = () => {
             Order Water <span className="text-[9px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded-full not-italic">v3.1 (Auto)</span>
           </h1>
         </div>
-        <div className="bg-indigo-950 text-white px-5 py-2.5 rounded-2xl shadow-xl shadow-indigo-900/10">
-          <p className="text-[8px] font-black uppercase text-slate-500 leading-none mb-1 tracking-widest text-center">Wallet</p>
+        <div className="bg-indigo-600 shadow-xl text-white px-5 py-2.5 rounded-2xl shadow-indigo-200">
+          <p className="text-[8px] font-black uppercase text-indigo-100 opacity-80 leading-none mb-1 tracking-widest text-center">Wallet</p>
           <p className="text-sm font-black leading-tight tracking-tight">₹{Number(user.wallet).toFixed(0)}</p>
         </div>
       </div>
@@ -462,19 +497,19 @@ const OrderWater: React.FC = () => {
               </div>
 
               {isBarrel(p) && quantities[p.id] > 0 && (
-                <div className="mt-8 bg-slate-950 p-6 rounded-[2rem] border-b-4 border-blue-600 relative overflow-hidden group/exchange">
+                <div className="mt-8 bg-blue-600 p-6 rounded-[2rem] border-b-4 border-blue-400 relative overflow-hidden group/exchange">
                   <div className="relative z-10">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                           <RotateCcw size={16} className="text-blue-500" />
-                          <span className="text-[9px] font-black uppercase text-white tracking-[0.2em]">Barrel Exchange</span>
+                          <span className="text-[9px] font-black uppercase text-white tracking-[0.2em]">Jar Exchange</span>
                         </div>
                         <p className="text-[8px] font-bold text-slate-500 uppercase mt-1">Owned Inventory: {user?.activeBarrels || 0}</p>
                       </div>
                       <div className="flex flex-col items-end">
                         <div className="flex items-center gap-4">
-                          <button onClick={() => setBarrelReturns(Math.max(0, barrelReturns - 1))} className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-black text-white shadow-sm hover:bg-slate-700">-</button>
+                          <button onClick={() => setBarrelReturns(Math.max(0, barrelReturns - 1))} className="w-9 h-9 rounded-xl bg-white/20 border border-white/20 flex items-center justify-center font-black text-white shadow-sm hover:bg-white/30">-</button>
                           <span className="font-black text-xl w-4 text-center text-white">{barrelReturns}</span>
                           <button
                             onClick={() => {
@@ -487,7 +522,7 @@ const OrderWater: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    <div className="bg-slate-900/50 p-3 rounded-xl border border-white/5 space-y-1">
+                    <div className="bg-white/10 p-3 rounded-xl border border-white/10 space-y-1">
                       <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest italic leading-tight">Authentic Pani Gadi Units Only</p>
                       <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Deposit: ₹{(p.securityFee !== undefined && Number(p.securityFee) > 0) ? p.securityFee : 200} / Unit (Refundable)</p>
                     </div>
@@ -508,7 +543,7 @@ const OrderWater: React.FC = () => {
         <div className="px-5 mt-10 pb-10">
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
             <div className="flex items-center gap-4 mb-8">
-              <div className="bg-slate-950 p-3 rounded-2xl text-white shadow-xl rotate-3"><Calendar size={22} /></div>
+              <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-xl rotate-3"><Calendar size={22} /></div>
               <div>
                 <h3 className="text-[11px] font-black text-slate-950 uppercase tracking-[0.2em]">Logistics Schedule</h3>
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Select Delivery window</p>
@@ -552,15 +587,7 @@ const OrderWater: React.FC = () => {
         </div>
       </div>
 
-      {true && (
-        <div className="p-4 bg-slate-100 text-[10px] font-mono whitespace-pre-wrap break-all border-t border-slate-200" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-          <p className="font-bold mb-2">DEBUG INFO (Owner Only):</p>
-          <p>User Role: {user.role}</p>
-          <p>Active Barrels: {user.activeBarrels}</p>
-          <p>Barrel Returns: {barrelReturns}</p>
-          <p>Products (First 3): {JSON.stringify(products.slice(0, 3), null, 2)}</p>
-        </div>
-      )}
+
 
       {summary.total >= 0 && (Object.values(quantities).some((q: number) => q > 0)) && (
         <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-6 bg-white/80 backdrop-blur-xl border-t border-slate-100 z-40 rounded-t-[3rem] shadow-[0_-20px_50px_rgba(0,0,0,0.05)]">
@@ -569,7 +596,7 @@ const OrderWater: React.FC = () => {
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Liability</p>
               <p className="text-4xl font-black tracking-tighter text-slate-950">₹{summary.total}</p>
             </div>
-            <button onClick={() => setShowCheckout(true)} className="flex-1 bg-slate-950 text-white py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 active:scale-95 transition-all shadow-2xl hover:bg-black group">
+            <button onClick={() => setShowCheckout(true)} className="flex-1 bg-indigo-600 text-white py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 active:scale-95 transition-all shadow-xl shadow-indigo-100 hover:bg-indigo-700 group">
               Confirm Order <ShoppingBag size={20} className="group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
@@ -577,7 +604,7 @@ const OrderWater: React.FC = () => {
       )}
 
       {showCheckout && (
-        <div className="fixed inset-0 bg-slate-950/40 z-50 flex items-end justify-center backdrop-blur-md">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center backdrop-blur-md">
           <div className="bg-white w-full max-w-md rounded-t-[3.5rem] p-10 max-h-[94vh] overflow-y-auto animate-in slide-in-from-bottom-10 duration-500 shadow-2xl border-t border-white">
             {isSuccess ? (
               <div className="flex flex-col items-center justify-center py-24 space-y-8">
@@ -607,7 +634,7 @@ const OrderWater: React.FC = () => {
                   <div>
                     <h2 className="text-3xl font-black text-slate-950 tracking-tighter uppercase italic">Order <span className="text-blue-600">Invoice</span></h2>
                   </div>
-                  <button onClick={() => setShowCheckout(false)} className="p-3 bg-slate-50 text-slate-400 rounded-full hover:bg-rose-50 hover:text-rose-600 transition-colors border border-slate-100"><X size={24} /></button>
+                  <button onClick={() => setShowCheckout(false)} className="p-3 bg-slate-50 text-slate-400 rounded-full hover:bg-rose-50 hover:text-rose-600 transition-colors border border-slate-200"><X size={24} /></button>
                 </div>
 
                 <div className="space-y-4 mb-8">
@@ -634,6 +661,41 @@ const OrderWater: React.FC = () => {
                       <div className="flex justify-between text-[10px] font-black uppercase text-emerald-600 tracking-widest">
                         <span className="flex items-center gap-1"><Gift size={12} /> Referral Applied</span>
                         <span>- ₹{summary.discountApplied}</span>
+                      </div>
+                    )}
+
+                    {summary.couponDiscount > 0 && (
+                      <div className="flex justify-between text-[10px] font-black uppercase text-blue-600 tracking-widest">
+                        <span className="flex items-center gap-1"><Sparkles size={12} /> Coupon Discount</span>
+                        <span>- ₹{summary.couponDiscount}</span>
+                      </div>
+                    )}
+
+                    {!appliedCoupon && (
+                      <div className="mt-6 flex flex-col gap-3">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="PROMO CODE"
+                            className="flex-1 bg-white border-2 border-slate-100 rounded-xl px-4 py-3 text-[10px] font-black uppercase outline-none focus:border-blue-600 transition-all font-sans"
+                            value={couponCode}
+                            onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                          />
+                          <button
+                            id="apply-coupon-btn"
+                            onClick={validateCoupon}
+                            className="bg-slate-900 text-white px-6 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => setShowCouponDialog(true)}
+                          className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2 hover:opacity-70 transition-opacity px-1"
+                        >
+                          <Gift size={14} /> View All Offers
+                        </button>
+                        {couponError && <p className="text-[10px] font-bold text-rose-600 uppercase px-2">{couponError}</p>}
                       </div>
                     )}
                   </div>
@@ -670,12 +732,107 @@ const OrderWater: React.FC = () => {
                   </div>
                 </div>
 
-                <button onClick={() => handleOrder()} className="w-full bg-slate-950 text-white font-black py-7 rounded-[2.5rem] flex items-center justify-center gap-4 shadow-2xl active:scale-95 transition-all text-[11px] uppercase tracking-[0.2em] hover:bg-black">
+                <button onClick={() => handleOrder()} className="w-full bg-indigo-600 text-white font-black py-7 rounded-[2.5rem] flex items-center justify-center gap-4 shadow-xl shadow-indigo-100 active:scale-95 transition-all text-[11px] uppercase tracking-[0.2em] hover:bg-indigo-700">
                   {paymentMethod === 'UPI' ? 'Authorize Payment' : 'Complete Transaction'} <Sparkles size={20} />
                 </button>
                 <p className="text-[8px] text-center text-slate-400 font-black uppercase tracking-[0.4em] mt-10 flex items-center justify-center gap-3"><ShieldCheck size={14} className="text-emerald-500" /> AES-256 Encrypted Transfer</p>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {showCouponDialog && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-end justify-center backdrop-blur-md">
+          <div className="bg-white w-full max-w-md rounded-t-[3.5rem] p-10 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom-10 duration-500 shadow-2xl border-t border-white">
+            <div className="flex justify-between items-center mb-8">
+              <h2 className="text-3xl font-black text-slate-950 tracking-tighter uppercase italic">Best <span className="text-blue-600">Offers</span></h2>
+              <button onClick={() => setShowCouponDialog(false)} className="p-3 bg-slate-50 text-slate-400 rounded-full hover:bg-rose-50 hover:text-rose-600 transition-colors border border-slate-200"><X size={24} /></button>
+            </div>
+
+            <div className="space-y-4">
+              {availableCoupons.length === 0 ? (
+                <div className="py-10 text-center">
+                  <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">No coupons available right now</p>
+                </div>
+              ) : (
+                availableCoupons.map(coupon => {
+                  const baseline = summary.subtotal;
+
+                  // Real-time applicability check for product-specific coupons
+                  let isApplicable = baseline >= Number(coupon.minOrderValue);
+                  let errorMessage = "";
+
+                  if (coupon.applicableProducts) {
+                    try {
+                      const prodList = typeof coupon.applicableProducts === 'string' ? JSON.parse(coupon.applicableProducts) : coupon.applicableProducts;
+                      if (prodList && prodList.length > 0) {
+                        const applicableItems = summary.items.filter(item => prodList.includes(item.id));
+                        const appSubtotal = applicableItems.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
+                        isApplicable = appSubtotal >= Number(coupon.minOrderValue);
+
+                        if (applicableItems.length === 0) {
+                          errorMessage = "Not valid for items in cart";
+                        } else if (appSubtotal < Number(coupon.minOrderValue)) {
+                          errorMessage = `Add ₹${Number(coupon.minOrderValue) - appSubtotal} more worth of targeted items`;
+                        }
+                      }
+                    } catch (e) { }
+                  }
+
+                  const shortMsg = isApplicable
+                    ? `Save ${coupon.discountType === 'FIXED' ? '₹' + coupon.discountValue : coupon.discountValue + '%'}`
+                    : (errorMessage || `Add ₹${Number(coupon.minOrderValue) - baseline} more worth of water to unlock`);
+
+                  return (
+                    <div
+                      key={coupon.id}
+                      className={`p-6 rounded-3xl border-2 transition-all relative overflow-hidden group
+                        ${isApplicable
+                          ? 'border-indigo-600/20 bg-indigo-50/30'
+                          : 'border-slate-100 bg-slate-50 opacity-60'
+                        }`}
+                    >
+                      <div className="relative z-10">
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="bg-white px-4 py-1.5 rounded-xl border border-indigo-100 shadow-sm">
+                            <span className="text-indigo-600 font-black text-xs tracking-widest">{coupon.code}</span>
+                          </div>
+                          {isApplicable && (
+                            <span className="bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest">Applicable</span>
+                          )}
+                        </div>
+
+                        <p className="text-lg font-black text-slate-950 uppercase tracking-tight">{shortMsg}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                          Valid on orders above ₹{coupon.minOrderValue}
+                        </p>
+
+                        <button
+                          disabled={!isApplicable}
+                          onClick={() => {
+                            setCouponCode(coupon.code);
+                            setShowCouponDialog(false);
+                            // We trigger validation after a small delay to let state update
+                            setTimeout(() => {
+                              const btn = document.getElementById('apply-coupon-btn');
+                              if (btn) btn.click();
+                            }, 100);
+                          }}
+                          className={`w-full mt-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all
+                            ${isApplicable
+                              ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100 hover:scale-105 active:scale-95'
+                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                            }`}
+                        >
+                          {isApplicable ? 'Apply Now' : 'Not Enough Items'}
+                        </button>
+                      </div>
+                      <Sparkles size={60} className={`absolute -right-4 -bottom-4 text-indigo-600/5 rotate-12 transition-transform group-hover:scale-110`} />
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
       )}

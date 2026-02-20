@@ -38,8 +38,10 @@ router.post('/send-otp', async (req, res) => {
         let verificationId = null;
         let otp = 'MC_GENERATED'; // Placeholder for Message Central, or actual OTP for test numbers
 
+        const testNumbers = ['1111111111', '2222222222', '3333333333', '9999999999', '7750038967'];
+
         // Message Central Integration
-        if (MC_API_KEY && phone !== '9999999999') {
+        if (MC_API_KEY && !testNumbers.includes(phone)) {
             try {
                 const authToken = await getMCAuthToken();
                 if (authToken) {
@@ -101,8 +103,9 @@ router.post('/verify-otp', async (req, res) => {
         if (!record) return res.status(400).json({ error: 'No OTP record found' });
         if (Date.now() > record.expiresAt) return res.status(400).json({ error: 'OTP expired' });
 
+        const testNumbers = ['1111111111', '2222222222', '3333333333', '9999999999', '7750038967'];
         // Message Central Validation
-        if (record.verificationId && MC_API_KEY && phone !== '9999999999') {
+        if (record.verificationId && MC_API_KEY && !testNumbers.includes(phone)) {
             try {
                 const authToken = await getMCAuthToken();
                 if (authToken) {

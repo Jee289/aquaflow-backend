@@ -121,8 +121,10 @@ const Dashboard: React.FC = () => {
               // For security, backend should verify and then update.
               // Assuming verify endpoint just checks status. We will patch user.
 
-              const newWallet = user.wallet + amount;
-              await api.patch(`/users/${user.uid}`, { wallet: newWallet });
+              // Wallet updated by backend in /verify route
+              // Just refresh user data to see new balance
+              // const newWallet = user.wallet + amount;
+              // await api.patch(`/users/${user.uid}`, { wallet: newWallet });
 
               setIsProcessing(false);
               setShowSuccess(true);
@@ -157,10 +159,10 @@ const Dashboard: React.FC = () => {
   const securityDepositValue = (user.activeBarrels || 0) * 200;
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-[#fcfcfd] shadow-2xl overflow-x-hidden flex flex-col text-slate-900 border-x border-slate-100">
+    <div className="max-w-md mx-auto min-h-screen bg-[#fcfcfd] shadow-2xl overflow-x-hidden flex flex-col text-slate-900 border-x border-slate-100 pt-4">
       <header className="bg-white/80 backdrop-blur-xl border-b border-slate-100 px-6 py-5 flex justify-between items-center sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <div className="bg-slate-950 p-2 rounded-xl shadow-lg rotate-3">
+          <div className="bg-indigo-600 p-2 rounded-xl shadow-lg rotate-3">
             <Droplet size={20} className="text-white" />
           </div>
           <div>
@@ -180,17 +182,17 @@ const Dashboard: React.FC = () => {
 
       <div className="flex-1 overflow-y-auto pb-24 no-scrollbar">
         <section className="p-5 space-y-4">
-          <div className="bg-indigo-950 text-white p-8 rounded-[2.5rem] shadow-2xl overflow-hidden relative border-b-4 border-indigo-600">
+          <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-700 text-white p-8 rounded-[2.5rem] shadow-2xl overflow-hidden relative border-b-4 border-indigo-400">
             <div className="z-10 relative">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Available Balance</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-100 opacity-80">Available Balance</p>
                   <h2 className="text-5xl font-black mt-2 tracking-tighter">₹{Number(user.wallet).toFixed(0)}</h2>
                 </div>
                 <div className="text-right">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 flex items-center justify-end gap-1"><Lock size={10} /> Security</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-indigo-100 opacity-80 flex items-center justify-end gap-1"><Lock size={10} /> Security</p>
                   <h4 className="text-xl font-black mt-1">₹{securityDepositValue}</h4>
-                  <p className="text-[8px] text-indigo-400 font-black uppercase tracking-tighter">({user.activeBarrels || 0} Jar Unit{user.activeBarrels !== 1 ? 's' : ''})</p>
+                  <p className="text-[8px] text-indigo-200 font-black uppercase tracking-tighter">({user.activeBarrels || 0} Jar Unit{user.activeBarrels !== 1 ? 's' : ''})</p>
                 </div>
               </div>
               <button onClick={() => setShowAddCash(true)} className="mt-8 bg-indigo-600 text-white text-[10px] font-black px-10 py-4 rounded-2xl shadow-xl shadow-indigo-900/40 active:scale-95 transition-all uppercase tracking-[0.2em] hover:bg-indigo-500">
@@ -211,8 +213,8 @@ const Dashboard: React.FC = () => {
               <Droplet className="text-indigo-600" size={32} />
             </div>
             <span className="font-black text-slate-950 text-[10px] uppercase tracking-[0.2em]">Order Water</span>
-            {user.orderCount === 0 && (
-              <div className="absolute top-4 right-4 bg-emerald-500 text-[8px] font-black text-white px-2 py-1 rounded-lg shadow-lg animate-bounce uppercase">Free</div>
+            {(user.orderCount || 0) < 3 && (
+              <div className="absolute top-4 right-4 bg-emerald-500 text-[8px] font-black text-white px-2 py-1 rounded-lg shadow-lg animate-bounce uppercase">{(user.orderCount || 0) === 0 ? 'Free' : `${3 - user.orderCount} Free`}</div>
             )}
           </button>
           <button
@@ -250,8 +252,8 @@ const Dashboard: React.FC = () => {
                   <Droplet size={18} fill="currentColor" />
                 </div>
                 <div>
-                  <h3 className="font-black text-slate-900 text-[11px] uppercase tracking-[0.2em]">Hydration Lab</h3>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Daily Bio-Monitor</p>
+                  <h3 className="font-black text-slate-900 text-[11px] uppercase tracking-[0.2em]">Water Tracker</h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Hydration Goal</p>
                 </div>
               </div>
               <div className="text-right">
@@ -304,31 +306,31 @@ const Dashboard: React.FC = () => {
             <div className="absolute -left-4 -bottom-4 w-24 h-24 bg-blue-400/5 rounded-full blur-3xl"></div>
           </div>
 
-          <div className="bg-slate-950 p-8 rounded-[2.5rem] border-b-4 border-blue-600 relative overflow-hidden group">
+          <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-50 shadow-sm relative overflow-hidden group">
             <div className="flex justify-between items-start z-10 relative">
               <div className="flex items-center gap-4">
-                <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-xl shadow-blue-900/40">
+                <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-xl shadow-blue-100">
                   <Box size={24} />
                 </div>
                 <div>
-                  <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em]">Home Inventory</h3>
-                  <p className="text-2xl font-black text-white mt-1 tracking-tighter">{(Number(user.homeStock || 0) / 1000).toFixed(1)}L <span className="text-slate-500 text-xs">Remaining</span></p>
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Current Stock</h3>
+                  <p className="text-2xl font-black text-slate-900 mt-1 tracking-tighter">{(Number(user.homeStock || 0) / 1000).toFixed(1)}L <span className="text-slate-400 text-xs">Remaining</span></p>
                 </div>
               </div>
               <div className="text-right">
-                <div className="bg-blue-600/20 px-3 py-1.5 rounded-xl border border-blue-600/30">
-                  <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{Math.min(100, (Number(user.homeStock || 0) / (Number(user.activeBarrels || 1) * 20000)) * 100).toFixed(0)}% Full</p>
+                <div className="bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
+                  <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{Math.min(100, (Number(user.homeStock || 0) / (Number(user.activeBarrels || 1) * 20000)) * 100).toFixed(0)}% Full</p>
                 </div>
               </div>
             </div>
 
-            <div className="mt-8 bg-slate-900/80 p-5 rounded-[2rem] border border-white/5 relative z-10">
+            <div className="mt-8 bg-slate-50 p-5 rounded-[2rem] border border-slate-100 relative z-10">
               <div className="flex items-center gap-3">
                 <Clock size={16} className="text-amber-500" />
-                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   {Number(user.homeStock) > 0
                     ? `Est. Run out: ${Math.ceil(Number(user.homeStock) / Math.max(1, hydration || 3500))} Days`
-                    : "Inventory Critical - Refill Required"
+                    : "Out of Stock - Refill Required"
                   }
                 </p>
               </div>
@@ -465,8 +467,31 @@ const Dashboard: React.FC = () => {
               </div>
             ) : (
               <>
-                <div className="flex justify-between items-center mb-8"><h2 className="text-2xl font-black">Add Cash</h2><button onClick={() => setShowAddCash(false)} className="p-2 bg-gray-100 rounded-full"><X size={20} /></button></div>
+                <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-black">Add Cash</h2><button onClick={() => setShowAddCash(false)} className="p-2 bg-gray-100 rounded-full"><X size={20} /></button></div>
                 <div className="space-y-6">
+                  {/* Recharge Packs - Re-designed to be Grid and Non-clipping */}
+                  <div className="grid grid-cols-3 gap-2 p-1">
+                    {[
+                      { price: 500, bonus: 10, label: 'Starter', color: 'bg-blue-50 border-blue-100 text-blue-600' },
+                      { price: 1000, bonus: 50, label: 'Popular', color: 'bg-indigo-50 border-indigo-100 text-indigo-600' },
+                      { price: 2000, bonus: 200, label: 'Best Value', color: 'bg-emerald-50 border-emerald-100 text-emerald-600' }
+                    ].map(pack => (
+                      <button
+                        key={pack.price}
+                        onClick={() => setAddAmount(String(pack.price))}
+                        className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all relative
+                          ${addAmount === String(pack.price)
+                            ? `${pack.color.replace('text-', 'bg-').replace('50', '200')} border-current shadow-lg scale-[1.02]`
+                            : `${pack.color} border-transparent hover:border-blue-100`}`}
+                      >
+                        <p className="text-[7px] font-black uppercase tracking-widest opacity-80 mb-1">{pack.label}</p>
+                        <p className="text-lg font-black leading-none">₹{pack.price}</p>
+                        <div className="mt-2 bg-white/70 px-1.5 py-0.5 rounded-lg border border-white/20">
+                          <p className="text-[7px] font-black text-slate-900">+₹{pack.bonus}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Amount</label>
                     <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-2xl">₹</span><input type="number" className="w-full p-5 pl-10 bg-gray-50 border-2 border-gray-100 rounded-2xl outline-none font-black text-2xl" placeholder="0" value={addAmount} onChange={e => setAddAmount(e.target.value)} /></div>

@@ -68,11 +68,22 @@ const MAP_KEYS = {
   'createdat': 'createdAt',
   'postalcodes': 'postalCodes',
   'homestock': 'homeStock',
-  'referralbalance': 'referralBalance',
-  'ordercount': 'orderCount',
-  'referredby': 'referredBy',
-  'verificationid': 'verificationId',
-  'expiresat': 'expiresAt'
+  'home_stock': 'homeStock',
+  'referral_balance': 'referralBalance',
+  'order_count': 'orderCount',
+  'referred_by': 'referredBy',
+  'verification_id': 'verificationId',
+  'expires_at': 'expiresAt',
+  'coupon_id': 'couponId',
+  'discount_type': 'discountType',
+  'discount_value': 'discountValue',
+  'min_order_value': 'minOrderValue',
+  'usage_limit': 'usageLimit',
+  'usage_count': 'usageCount',
+  'is_active': 'isActive',
+  'discount_applied': 'discountApplied',
+  'user_usage_limit': 'userUsageLimit',
+  'applicable_products': 'applicableProducts'
 };
 
 const mapRowToCamel = (row) => {
@@ -113,7 +124,7 @@ const query = async (text, params) => {
           console.error("SQLite Query Error:", err.message, sqliteQuery);
           return reject(err);
         }
-        resolve({ rows });
+        resolve({ rows: (rows || []).map(mapRowToCamel) });
       });
     } else {
       sqliteDb.run(sqliteQuery, params || [], function (err) {
@@ -193,7 +204,8 @@ const initDb = async () => {
                 shippedAt BIGINT,
                 deliveredAt BIGINT,
                 timestamp BIGINT,
-                assignedAgentId TEXT
+                assignedAgentId TEXT,
+                coupon_id INTEGER
             )`);
 
       // Migration for Orders
@@ -203,6 +215,8 @@ const initDb = async () => {
       try { await client.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shippedAt BIGINT`); } catch (e) { }
       try { await client.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deliveredAt BIGINT`); } catch (e) { }
       try { await client.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS assignedAgentId TEXT`); } catch (e) { }
+      try { await client.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_id INTEGER`); } catch (e) { }
+      try { await client.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_applied NUMERIC DEFAULT 0`); } catch (e) { }
 
       // 4. Return Requests
       await client.query(`CREATE TABLE IF NOT EXISTS return_requests (
@@ -286,6 +300,25 @@ const initDb = async () => {
 
       try { await client.query(`ALTER TABLE otp_verifications ADD COLUMN IF NOT EXISTS verificationId TEXT`); } catch (e) { }
 
+      // 10. Coupons Table
+      await client.query(`CREATE TABLE IF NOT EXISTS coupons (
+                id SERIAL PRIMARY KEY,
+                code TEXT UNIQUE NOT NULL,
+                discount_type TEXT NOT NULL,
+                discount_value NUMERIC NOT NULL,
+                min_order_value NUMERIC DEFAULT 0,
+                expiry BIGINT,
+                usage_limit INTEGER DEFAULT 0,
+                usage_count INTEGER DEFAULT 0,
+                user_usage_limit INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE,
+                applicable_products JSONB,
+                createdAt BIGINT
+            )`);
+
+      try { await client.query(`ALTER TABLE coupons ADD COLUMN IF NOT EXISTS user_usage_limit INTEGER DEFAULT 0`); } catch (e) { }
+      try { await client.query(`ALTER TABLE coupons ADD COLUMN IF NOT EXISTS applicable_products JSONB`); } catch (e) { }
+
       await client.query('COMMIT');
       console.log("PostgreSQL Tables Initialized");
       client.release();
@@ -359,7 +392,8 @@ const initDb = async () => {
                 shippedAt INTEGER,
                 deliveredAt INTEGER,
                 timestamp INTEGER,
-                assignedAgentId TEXT
+                assignedAgentId TEXT,
+                coupon_id INTEGER
             )`);
       sqliteDb.run(`ALTER TABLE orders ADD COLUMN state TEXT`, (err) => { });
       sqliteDb.run(`ALTER TABLE orders ADD COLUMN city TEXT`, (err) => { });
@@ -367,6 +401,8 @@ const initDb = async () => {
       sqliteDb.run(`ALTER TABLE orders ADD COLUMN shippedAt INTEGER`, (err) => { });
       sqliteDb.run(`ALTER TABLE orders ADD COLUMN deliveredAt INTEGER`, (err) => { });
       sqliteDb.run(`ALTER TABLE orders ADD COLUMN assignedAgentId TEXT`, (err) => { });
+      sqliteDb.run(`ALTER TABLE orders ADD COLUMN coupon_id INTEGER`, (err) => { });
+      sqliteDb.run(`ALTER TABLE orders ADD COLUMN discount_applied REAL DEFAULT 0`, (err) => { });
 
       // RETURN REQUESTS
       sqliteDb.run(`CREATE TABLE IF NOT EXISTS return_requests (
@@ -459,6 +495,24 @@ const initDb = async () => {
                 expiryDate INTEGER,
                 createdAt INTEGER
             )`);
+
+      // COUPONS
+      sqliteDb.run(`CREATE TABLE IF NOT EXISTS coupons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                discount_type TEXT NOT NULL,
+                discount_value REAL NOT NULL,
+                min_order_value REAL DEFAULT 0,
+                expiry INTEGER,
+                usage_limit INTEGER DEFAULT 0,
+                usage_count INTEGER DEFAULT 0,
+                user_usage_limit INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                applicable_products TEXT,
+                createdAt INTEGER
+            )`);
+      sqliteDb.run(`ALTER TABLE coupons ADD COLUMN user_usage_limit INTEGER DEFAULT 0`, (err) => { });
+      sqliteDb.run(`ALTER TABLE coupons ADD COLUMN applicable_products TEXT`, (err) => { });
 
       console.log("SQLite Tables Initialized");
     });

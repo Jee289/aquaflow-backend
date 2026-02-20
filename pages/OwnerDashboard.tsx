@@ -11,12 +11,25 @@ const OwnerDashboard: React.FC = () => {
   const { logout, setImpersonatedDistrict } = useAuth();
   const navigate = useNavigate();
 
-  const [view, setView] = useState<'overview' | 'admins' | 'users' | 'locations' | 'notifications' | 'sales'>('overview');
+  const [view, setView] = useState<'overview' | 'admins' | 'users' | 'locations' | 'notifications' | 'sales' | 'offers'>('overview');
   const [orders, setOrders] = useState<Order[]>([]);
   const [locations, setLocations] = useState<LocationConfig[]>([]);
   const [interestData, setInterestData] = useState<{ district: string, count: number }[]>([]); // Keep district for legacy interest or migrate
   const [users, setUsers] = useState<User[]>([]);
   const [admins, setAdmins] = useState<User[]>([]);
+  const [returnRequests, setReturnRequests] = useState<any[]>([]);
+  const [coupons, setCoupons] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [newCoupon, setNewCoupon] = useState({
+    code: '',
+    discountType: 'FIXED',
+    discountValue: 0,
+    minOrderValue: 0,
+    usageLimit: 0,
+    userUsageLimit: 0,
+    applicableProducts: [] as string[]
+  });
+  const [editingCoupon, setEditingCoupon] = useState<any | null>(null);
 
   // Registration States
   const [newAdmin, setNewAdmin] = useState({ state: '', city: '', phone: '', name: '' });
@@ -32,6 +45,8 @@ const OwnerDashboard: React.FC = () => {
   const [notifMsg, setNotifMsg] = useState('');
   const [notifTarget, setNotifTarget] = useState<'GLOBAL' | string>('GLOBAL');
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedStates, setExpandedStates] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchData();
@@ -41,12 +56,15 @@ const OwnerDashboard: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [oRes, lRes, iRes, uRes, aRes] = await Promise.all([
+      const [oRes, lRes, iRes, uRes, aRes, retRes, coupRes, prodRes] = await Promise.all([
         api.get('/orders'),
         api.get('/locations'),
         api.get('/interests'),
         api.get('/users'),
-        api.get('/users?role=ADMIN')
+        api.get('/users?role=ADMIN'),
+        api.get('/returns'),
+        api.get('/coupons'),
+        api.get('/products')
       ]);
 
       setOrders(oRes.data);
@@ -54,16 +72,81 @@ const OwnerDashboard: React.FC = () => {
       setInterestData(iRes.data);
       setUsers(uRes.data);
       setAdmins(aRes.data);
+      setReturnRequests(retRes.data);
+      setCoupons(coupRes.data || []);
+      setProducts(prodRes.data || []);
     } catch (e) {
       console.error(e);
     }
   };
 
+  const handleCreateCoupon = async () => {
+    if (!newCoupon.code || !newCoupon.discountValue) return alert('Code and Value required');
+    try {
+      await api.post('/coupons', newCoupon);
+      alert('Coupon Created');
+      setNewCoupon({
+        code: '',
+        discountType: 'FIXED',
+        discountValue: 0,
+        minOrderValue: 0,
+        usageLimit: 0,
+        userUsageLimit: 0,
+        applicableProducts: []
+      });
+      fetchData();
+    } catch (e) {
+      alert('Failed to create coupon');
+    }
+  };
+
+  const deleteCoupon = async (id: number) => {
+    if (!confirm('Are you sure?')) return;
+    try {
+      await api.delete(`/coupons/${id}`);
+      fetchData();
+    } catch (e) {
+      alert('Failed to delete coupon');
+    }
+  };
+
+  const handleUpdateCoupon = async () => {
+    if (!editingCoupon) return;
+    try {
+      await api.patch(`/coupons/${editingCoupon.id}`, {
+        usageLimit: editingCoupon.usageLimit,
+        userUsageLimit: editingCoupon.userUsageLimit,
+        expiry: editingCoupon.expiry,
+        isActive: editingCoupon.isActive
+      });
+      alert('Coupon Updated');
+      setEditingCoupon(null);
+      fetchData();
+    } catch (e) {
+      alert('Failed to update coupon');
+    }
+  };
+
   const totalGrossRevenue = orders.reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
-  const globalActiveBarrels = users.reduce((sum, u) => sum + (u.activeBarrels || 0), 0);
+  const customersOnly = users.filter(u => u.role === 'USER');
+  const globalActiveBarrels = customersOnly.reduce((sum, u) => sum + (u.activeBarrels || 0), 0);
+  const totalActiveUsers = globalActiveBarrels; // User requested: active users = no of active barrels
   const totalLiability = globalActiveBarrels * 200;
   const totalConnections = globalActiveBarrels;
-  const netSales = totalGrossRevenue - (orders.length * 200); // Rough approximation or use items
+  // Calculate Net Profit: (Item Price * Qty) + Delivery - Discounts [Excludes Security Deposits]
+  const netSales = orders.reduce((sum, o) => {
+    try {
+      const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
+      const itemsRevenue = (items || []).reduce((acc: number, item: any) => acc + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
+      const orderNet = itemsRevenue + Number(o.deliveryCharge || 0) - Number(o.discountApplied || 0);
+      return sum + orderNet;
+    } catch (e) {
+      return sum;
+    }
+  }, 0);
+
+  const totalDiscounts = orders.reduce((sum, o) => sum + Number(o.discountApplied || 0), 0);
+  const isPositiveProfit = netSales >= 0;
 
   const handlePortalEnter = (state: string, city: string) => {
     // Legacy support: if only district name used, we might need a composite key or just city name if unique enough for now
@@ -135,24 +218,31 @@ const OwnerDashboard: React.FC = () => {
               <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mb-1"></div>
             </div>
           </div>
-          <div className="bg-white p-7 rounded-[2rem] shadow-sm border border-slate-100 group hover:border-emerald-200 transition-all">
+          <div className={`bg-white p-7 rounded-[2rem] shadow-sm border border-slate-100 group transition-all ${isPositiveProfit ? 'hover:border-emerald-200' : 'hover:border-rose-200'}`}>
             <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3">Net Profit</p>
             <div className="flex items-end gap-1">
-              <h3 className="text-3xl font-black text-emerald-600 leading-none">₹{netSales.toLocaleString()}</h3>
-              <TrendingUp size={16} className="text-emerald-500 mb-1" />
+              <h3 className={`text-3xl font-black leading-none ${isPositiveProfit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                ₹{netSales.toLocaleString()}
+              </h3>
+              {isPositiveProfit ? (
+                <TrendingUp size={16} className="text-emerald-500 mb-1" />
+              ) : (
+                <TrendingUp size={16} className="text-rose-500 mb-1 rotate-180" />
+              )}
             </div>
           </div>
-          <div className="bg-white p-7 rounded-[2rem] shadow-sm border border-slate-100 group hover:border-indigo-200 transition-all">
-            <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest mb-3">Connections</p>
-            <h3 className="text-3xl font-black text-indigo-950 leading-none">{totalConnections} <span className="text-xs text-indigo-300">Jars</span></h3>
+          <div className="bg-white p-7 rounded-[2rem] shadow-sm border border-slate-100 group hover:border-blue-200 transition-all">
+            <p className="text-[10px] font-black uppercase text-blue-400 tracking-widest mb-3">Promo Burn</p>
+            <h3 className="text-3xl font-black text-slate-950 leading-none">₹{totalDiscounts.toLocaleString()}</h3>
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2"></div>
           </div>
           <div className="bg-indigo-900 p-7 rounded-[2rem] shadow-xl text-white border-b-4 border-indigo-400">
             <p className="text-[10px] font-black uppercase text-indigo-300 tracking-widest mb-3">Territories</p>
             <h3 className="text-3xl font-black leading-none">{locations.filter(l => l.isActive).length} <span className="text-xs text-indigo-400">Active</span></h3>
           </div>
-          <div className="bg-white p-7 rounded-[2rem] shadow-sm border border-slate-100 group hover:border-violet-200 transition-all">
-            <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest mb-3">Global Users</p>
-            <h3 className="text-3xl font-black text-indigo-950 leading-none">{users.length}</h3>
+          <div className="bg-white p-7 rounded-[2.5rem] shadow-sm border border-slate-100 group hover:border-violet-200 transition-all">
+            <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest mb-3">Active Users</p>
+            <h3 className="text-3xl font-black text-indigo-950 leading-none">{totalActiveUsers}</h3>
           </div>
         </section>
 
@@ -164,7 +254,8 @@ const OwnerDashboard: React.FC = () => {
             { id: 'locations', label: 'Expansion', icon: <MapPin size={16} /> },
             { id: 'admins', label: 'Regional Chiefs', icon: <Shield size={16} /> },
             { id: 'users', label: 'Global Registry', icon: <Globe size={16} /> },
-            { id: 'notifications', label: 'Broadcast', icon: <Bell size={16} /> }
+            { id: 'notifications', label: 'Broadcast', icon: <Bell size={16} /> },
+            { id: 'offers', label: 'Offers', icon: <Sparkles size={16} /> }
           ].map(t => (
             <button
               key={t.id}
@@ -216,9 +307,22 @@ const OwnerDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* VIEW: LOCATIONS (NEW) */}
+        {/* VIEW: LOCATIONS (Expansion) */}
         {view === 'locations' && (
           <div className="space-y-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+              <div className="bg-white p-4 rounded-3xl border border-slate-100 flex items-center gap-4 flex-1 max-w-xl shadow-sm focus-within:ring-2 ring-indigo-500/20 transition-all">
+                <Search size={20} className="text-slate-400 ml-2" />
+                <input
+                  type="text"
+                  placeholder="Search regions, cities or states..."
+                  className="bg-transparent border-none outline-none w-full font-bold text-slate-700"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+
             <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
               <h3 className="text-lg font-black mb-6">Launch New Territory</h3>
               <div className="flex flex-col md:flex-row gap-4 items-end">
@@ -235,40 +339,81 @@ const OwnerDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {locations.map(loc => (
-                <div key={loc.id} className="bg-white p-6 rounded-2xl border border-slate-100 flex flex-col justify-between group hover:border-indigo-300 transition-colors hover:shadow-lg">
-                  <div>
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{loc.state}</span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={async () => {
-                            if (!confirm("Delete Territory? This cannot be undone.")) return;
-                            try {
-                              await api.delete(`/locations/${loc.id}`);
-                              fetchData();
-                            } catch (e) { alert("Failed to delete"); }
-                          }}
-                          className="p-1 rounded-full text-slate-300 bg-slate-100 hover:bg-red-50 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        <button onClick={() => toggleLocationStatus(loc.id, loc.isActive)} className={`p-1 rounded-full ${loc.isActive ? 'text-green-500 bg-green-50' : 'text-slate-300 bg-slate-100'}`}>
-                          <CheckCircle size={16} fill={loc.isActive ? "currentColor" : "none"} />
-                        </button>
+            <div className="space-y-4">
+              {(Object.entries(
+                locations
+                  .filter(l =>
+                    l.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    l.state.toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .reduce((acc, loc) => {
+                    if (!acc[loc.state]) acc[loc.state] = [];
+                    acc[loc.state].push(loc);
+                    return acc;
+                  }, {} as Record<string, LocationConfig[]>)
+              ) as [string, LocationConfig[]][]).map(([state, stateLocs]) => {
+                const isExpanded = expandedStates.has(state) || searchQuery.length > 0;
+                return (
+                  <div key={state} className="space-y-4">
+                    <button
+                      onClick={() => {
+                        const next = new Set(expandedStates);
+                        if (next.has(state)) next.delete(state); else next.add(state);
+                        setExpandedStates(next);
+                      }}
+                      className="w-full flex items-center justify-between p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100/50 hover:bg-indigo-50 transition-colors group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="bg-indigo-600 w-1.5 h-6 rounded-full"></div>
+                        <h4 className="text-sm font-black uppercase tracking-widest text-indigo-900">{state}</h4>
+                        <span className="bg-white px-3 py-1 rounded-full text-[10px] font-black text-indigo-400 border border-indigo-100">{stateLocs.length} Cities</span>
                       </div>
-                    </div>
-                    <h4 className="text-xl font-black text-indigo-950 uppercase italic">{loc.city}</h4>
-                    {loc.adminPhone ? (
-                      <p className="text-xs text-indigo-600 font-bold mt-1">Admin: {loc.adminPhone}</p>
-                    ) : (
-                      <p className="text-xs text-amber-500 font-bold mt-1">No Admin Assigned</p>
+                      <LayoutGrid size={16} className={`text-indigo-300 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isExpanded && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pl-4 border-l-2 border-indigo-50">
+                        {stateLocs.map(loc => (
+                          <div key={loc.id} className="bg-white p-6 rounded-2xl border border-slate-100 flex flex-col justify-between group hover:border-indigo-300 transition-colors hover:shadow-lg">
+                            <div>
+                              <div className="flex justify-between items-start mb-2">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{loc.state}</span>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm("Delete Territory? This cannot be undone.")) return;
+                                      try {
+                                        await api.delete(`/locations/${loc.id}`);
+                                        fetchData();
+                                      } catch (e) { alert("Failed to delete"); }
+                                    }}
+                                    className="p-1 rounded-full text-slate-300 bg-slate-100 hover:bg-red-50 hover:text-red-500 transition-colors"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                  <button onClick={() => toggleLocationStatus(loc.id!, loc.isActive || false)} className={`p-1 rounded-full ${loc.isActive ? 'text-green-500 bg-green-50' : 'text-slate-300 bg-slate-100'}`}>
+                                    <CheckCircle size={16} fill={loc.isActive ? "currentColor" : "none"} />
+                                  </button>
+                                </div>
+                              </div>
+                              <h4 className="text-xl font-black text-indigo-950 uppercase italic">{loc.city}</h4>
+                              {loc.adminPhone ? (
+                                <p className="text-xs text-indigo-600 font-bold mt-1">Admin: {loc.adminPhone}</p>
+                              ) : (
+                                <p className="text-xs text-amber-500 font-bold mt-1">No Admin Assigned</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
-              {locations.length === 0 && <p className="text-slate-400">No locations configured yet.</p>}
+                );
+              })}
+              {locations.length === 0 && <p className="text-slate-400 p-10 text-center font-bold">No locations configured yet.</p>}
+              {locations.length > 0 && searchQuery && Object.keys(locations.filter(l => l.city.toLowerCase().includes(searchQuery.toLowerCase()) || l.state.toLowerCase().includes(searchQuery.toLowerCase()))).length === 0 && (
+                <p className="text-slate-400 p-10 text-center font-bold">No territories match "{searchQuery}"</p>
+              )}
             </div>
           </div>
         )}
@@ -327,67 +472,85 @@ const OwnerDashboard: React.FC = () => {
               </div>
             </div>
             <div className="space-y-4">
-              <h3 className="text-lg font-black">Active Council</h3>
+              <div className="flex justify-between items-center bg-white p-4 rounded-3xl border border-slate-100 shadow-sm focus-within:ring-2 ring-indigo-500/20 transition-all">
+                <div className="flex items-center gap-4 flex-1">
+                  <Search size={18} className="text-slate-400 ml-1" />
+                  <input
+                    type="text"
+                    placeholder="Search Chiefs by name or city..."
+                    className="bg-transparent border-none outline-none w-full font-bold text-slate-700 text-sm"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+              <h3 className="text-lg font-black flex items-center gap-2">Active Council <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[10px]">{admins.length}</span></h3>
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                {admins.map(a => (
-                  <div key={a.uid} className="bg-white p-5 rounded-2xl border border-slate-100 flex flex-col gap-3 group">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        {editingAdmin?.uid === a.uid ? (
-                          <input
-                            className="font-black text-indigo-950 border-b-2 border-indigo-500 outline-none bg-transparent"
-                            value={editingAdmin.name}
-                            onChange={(e) => setEditingAdmin({ ...editingAdmin, name: e.target.value })}
-                          />
-                        ) : (
-                          <h4 className="font-black text-indigo-950 uppercase italic tracking-tight">{a.name}</h4>
-                        )}
-                        <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest mt-1">{a.city}, {a.state} • {a.phone}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        {editingAdmin?.uid === a.uid ? (
-                          <>
-                            <button
-                              onClick={async () => {
-                                try {
-                                  await api.patch(`/users/${a.uid}`, { name: editingAdmin.name });
-                                  alert('Admin Updated');
-                                  setEditingAdmin(null);
-                                  fetchData();
-                                } catch (e) {
-                                  alert('Update failed');
-                                }
-                              }}
-                              className="p-2 bg-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition shadow-sm"
-                            ><Users size={16} /></button>
-                            <button onClick={() => setEditingAdmin(null)} className="p-2 bg-indigo-50 text-indigo-400 rounded-xl border border-indigo-100 hover:bg-indigo-100 transition shadow-sm"><X size={16} /></button>
-                          </>
-                        ) : (
-                          <>
-                            <button onClick={() => setEditingAdmin(a)} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 hover:bg-indigo-600 hover:text-white transition shadow-sm"><UserCircle size={16} /></button>
-                            <button
-                              onClick={async () => {
-                                if (!confirm('Revoke Admin Access?')) return;
-                                try {
-                                  await api.delete(`/users/${a.uid}`);
-                                  if (a.city) {
-                                    // Remove admin from location config if needed (optional sync)
+                {admins
+                  .filter(a =>
+                    a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    a.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    a.state.toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map(a => (
+                    <div key={a.uid} className="bg-white p-5 rounded-2xl border border-slate-100 flex flex-col gap-3 group">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          {editingAdmin?.uid === a.uid ? (
+                            <input
+                              className="font-black text-indigo-950 border-b-2 border-indigo-500 outline-none bg-transparent"
+                              value={editingAdmin.name}
+                              onChange={(e) => setEditingAdmin({ ...editingAdmin, name: e.target.value })}
+                            />
+                          ) : (
+                            <h4 className="font-black text-indigo-950 uppercase italic tracking-tight">{a.name}</h4>
+                          )}
+                          <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest mt-1">{a.city}, {a.state} • {a.phone}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          {editingAdmin?.uid === a.uid ? (
+                            <>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await api.patch(`/users/${a.uid}`, { name: editingAdmin.name });
+                                    alert('Admin Updated');
+                                    setEditingAdmin(null);
+                                    fetchData();
+                                  } catch (e) {
+                                    alert('Update failed');
                                   }
-                                  alert('Access Revoked');
-                                  fetchData();
-                                } catch (e) {
-                                  alert('Failed to revoke access');
-                                }
-                              }}
-                              className="p-2 bg-rose-50 text-rose-400 rounded-xl border border-rose-100 hover:bg-rose-500 hover:text-white transition shadow-sm"
-                            ><Trash2 size={16} /></button>
-                          </>
-                        )}
+                                }}
+                                className="p-2 bg-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition shadow-sm"
+                              ><Users size={16} /></button>
+                              <button onClick={() => setEditingAdmin(null)} className="p-2 bg-indigo-50 text-indigo-400 rounded-xl border border-indigo-100 hover:bg-indigo-100 transition shadow-sm"><X size={16} /></button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => setEditingAdmin(a)} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 hover:bg-indigo-600 hover:text-white transition shadow-sm"><UserCircle size={16} /></button>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm('Revoke Admin Access?')) return;
+                                  try {
+                                    await api.delete(`/users/${a.uid}`);
+                                    if (a.city) {
+                                      // Remove admin from location config if needed (optional sync)
+                                    }
+                                    alert('Access Revoked');
+                                    fetchData();
+                                  } catch (e) {
+                                    alert('Failed to revoke access');
+                                  }
+                                }}
+                                className="p-2 bg-rose-50 text-rose-400 rounded-xl border border-rose-100 hover:bg-rose-500 hover:text-white transition shadow-sm"
+                              ><Trash2 size={16} /></button>
+                            </>
+                          )}
+                        </div>
                       </div>
+                      <button onClick={() => handlePortalEnter(a.state!, a.city!)} className="w-full py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2 border border-indigo-100 shadow-sm"><ExternalLink size={14} /> Strategic Portal</button>
                     </div>
-                    <button onClick={() => handlePortalEnter(a.state!, a.city!)} className="w-full py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2 border border-indigo-100 shadow-sm"><ExternalLink size={14} /> Strategic Portal</button>
-                  </div>
-                ))}
+                  ))}
               </div>
             </div>
           </div>
@@ -397,26 +560,82 @@ const OwnerDashboard: React.FC = () => {
         {view === 'users' && (
           <div className="space-y-6">
             {!selectedRegistryLocation ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {locations.filter(l => l.isActive).map(loc => {
-                  const districtUsers = users.filter(u => u.city === loc.city && u.state === loc.state);
-                  const hasAdmin = admins.some(a => a.city === loc.city && a.state === loc.state);
-                  return (
-                    <button key={loc.id} onClick={() => setSelectedRegistryLocation(loc)} className="bg-white p-5 rounded-3xl border-2 border-slate-100 hover:border-blue-600 transition-all text-left shadow-sm group">
-                      <div className="flex justify-between items-start mb-3">
-                        <div className={`p-2 rounded-xl ${hasAdmin ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}><MapPin size={20} /></div>
-                        <ArrowRight size={16} className="text-slate-300 group-hover:text-blue-600 transition-colors" />
+              <div className="space-y-8">
+                <div className="bg-white p-4 rounded-3xl border border-slate-100 flex items-center gap-4 flex-1 max-w-xl shadow-sm focus-within:ring-2 ring-indigo-500/20 transition-all">
+                  <Search size={20} className="text-slate-400 ml-2" />
+                  <input
+                    type="text"
+                    placeholder="Search Users, Cities or Regions..."
+                    className="bg-transparent border-none outline-none w-full font-bold text-slate-700"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  {(Object.entries(
+                    locations
+                      .filter(l => l.isActive)
+                      .filter(l =>
+                        l.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        l.state.toLowerCase().includes(searchQuery.toLowerCase())
+                      )
+                      .reduce((acc, loc) => {
+                        if (!acc[loc.state]) acc[loc.state] = [];
+                        acc[loc.state].push(loc);
+                        return acc;
+                      }, {} as Record<string, LocationConfig[]>)
+                  ) as [string, LocationConfig[]][]).map(([state, stateLocs]) => {
+                    const isExpanded = expandedStates.has(`reg-${state}`) || searchQuery.length > 0;
+                    return (
+                      <div key={state} className="space-y-4">
+                        <button
+                          onClick={() => {
+                            const next = new Set(expandedStates);
+                            if (next.has(`reg-${state}`)) next.delete(`reg-${state}`); else next.add(`reg-${state}`);
+                            setExpandedStates(next);
+                          }}
+                          className="w-full flex items-center justify-between p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50 hover:bg-blue-50 transition-colors group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="bg-blue-600 w-1.5 h-6 rounded-full"></div>
+                            <h4 className="text-sm font-black uppercase tracking-widest text-blue-900">{state}</h4>
+                            <span className="bg-white px-3 py-1 rounded-full text-[10px] font-black text-blue-400 border border-blue-100">{stateLocs.length} Operational Cities</span>
+                          </div>
+                          <Globe size={16} className={`text-blue-300 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {isExpanded && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pl-4 border-l-2 border-blue-50">
+                            {stateLocs.map(loc => {
+                              const districtUsers = users.filter(u => u.city === loc.city && u.state === loc.state);
+                              const hasAdmin = admins.some(a => a.city === loc.city && a.state === loc.state);
+                              return (
+                                <button key={loc.id} onClick={() => setSelectedRegistryLocation(loc)} className="bg-white p-5 rounded-3xl border-2 border-slate-100 hover:border-blue-600 transition-all text-left shadow-sm group relative overflow-hidden">
+                                  <div className="flex justify-between items-start mb-3 relative z-10">
+                                    <div className={`p-2 rounded-xl ${hasAdmin ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}><MapPin size={20} /></div>
+                                    <ArrowRight size={16} className="text-slate-300 group-hover:text-blue-600 transition-colors" />
+                                  </div>
+                                  <div className="relative z-10">
+                                    <h4 className="font-black text-slate-900 truncate">{loc.city}</h4>
+                                    <p className="text-[10px] uppercase text-slate-400">{loc.state}</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">{districtUsers.length} Users Registry</p>
+                                    <div className="mt-4 flex items-center gap-2">
+                                      <div className={`w-2 h-2 rounded-full ${hasAdmin ? 'bg-green-500' : 'bg-slate-300'}`} />
+                                      <span className="text-[8px] font-black uppercase text-slate-400">{hasAdmin ? 'Operational' : 'Idle'}</span>
+                                    </div>
+                                  </div>
+                                  <div className="absolute right-[-10%] bottom-[-10%] w-20 h-20 bg-blue-50 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                      <h4 className="font-black text-slate-900">{loc.city}</h4>
-                      <p className="text-[10px] uppercase text-slate-400">{loc.state}</p>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">{districtUsers.length} Users Registry</p>
-                      <div className="mt-4 flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${hasAdmin ? 'bg-green-500' : 'bg-slate-300'}`} />
-                        <span className="text-[8px] font-black uppercase text-slate-400">{hasAdmin ? 'Operational' : 'Idle'}</span>
-                      </div>
-                    </button>
-                  );
-                })}
+                    );
+                  })}
+                  {activeLocations.length === 0 && <p className="text-slate-400 p-10 text-center font-bold">No operational territories found.</p>}
+                </div>
               </div>
             ) : (
               <div className="space-y-6">
@@ -470,7 +689,89 @@ const OwnerDashboard: React.FC = () => {
         {view === 'sales' && (
           <div className="space-y-8">
             <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-black mb-6">Daily Sales Report by Location</h3>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                <h3 className="text-lg font-black uppercase italic tracking-tight">Daily Sales Intelligence</h3>
+                <button
+                  onClick={() => {
+                    const headers = [
+                      'Date', 'Territory', 'Type', 'ID', 'Customer', 'Phone', 'Items/Details',
+                      'Delivered', 'Exchange', 'Pickup', 'Net Movement',
+                      'Subtotal', 'Delivery', 'Promo Discount', 'Security liability', 'Grand Total', 'Status', 'Payment', 'Coupon Code'
+                    ];
+
+                    // Combined data from Orders and Returns
+                    const reportData = [
+                      ...orders.map(o => {
+                        let items = o.items;
+                        if (typeof items === 'string') try { items = JSON.parse(items); } catch (e) { items = []; }
+                        const jarItem = (items || []).find((i: any) =>
+                          String(i.id).toUpperCase() === '20L' ||
+                          String(i.name).toUpperCase().includes('20L') ||
+                          i.image === 'style:barrel'
+                        );
+                        const delivered = jarItem ? Number(jarItem.quantity || 0) : 0;
+                        const exchange = Number(o.barrelReturns || 0);
+                        const net = delivered - exchange;
+
+                        return [
+                          new Date(o.timestamp).toLocaleDateString(),
+                          `${o.state}/${o.city}`,
+                          'ORDER',
+                          o.id,
+                          o.userName,
+                          o.userPhone,
+                          (items || []).map((i: any) => `${i.name} (${i.quantity})`).join('; '),
+                          delivered,
+                          exchange,
+                          0,
+                          net,
+                          o.totalAmount - (o.deliveryCharge || 0) - (delivered * 200) + (o.discountApplied || 0), // Base Subtotal (pre-discount)
+                          o.deliveryCharge || 0,
+                          o.discountApplied || 0,
+                          delivered * 200,
+                          o.totalAmount,
+                          o.status,
+                          o.paymentMethod,
+                          coupons.find(c => c.id === o.couponId)?.code || 'NONE'
+                        ];
+                      }),
+                      ...returnRequests.map(r => [
+                        new Date(r.timestamp).toLocaleDateString(),
+                        `${r.state}/${r.city}`,
+                        'JAR PICKUP',
+                        r.id,
+                        r.userName,
+                        r.userPhone,
+                        `Stand-alone Pick-up of ${r.barrelCount} Jars`,
+                        0,
+                        0,
+                        r.barrelCount,
+                        -r.barrelCount,
+                        0,
+                        0,
+                        0,
+                        -(r.barrelCount * 200),
+                        r.barrelCount * 200, // Amount to be refunded/processed
+                        r.status,
+                        'WALLET CREDIT',
+                        'N/A'
+                      ])
+                    ];
+
+                    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...reportData.map(e => e.map(val => `"${val}"`).join(','))].join('\n');
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `ALL_REGION_MASTER_${new Date().toISOString().split('T')[0]}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                  }}
+                  className="bg-slate-950 text-white px-8 py-4 rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center gap-3 shadow-2xl hover:bg-black transition-all active:scale-95 border-b-4 border-slate-700"
+                >
+                  <BarChart3 size={16} className="text-blue-400" /> All-Region Master Report
+                </button>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-2xl border border-blue-200">
@@ -526,17 +827,19 @@ const OwnerDashboard: React.FC = () => {
                           <td className="px-6 py-4 text-center">
                             <button
                               onClick={() => {
-                                const headers = ['Order ID', 'Date Placed', 'Customer', 'Phone', 'Items', 'Total Amount', 'Status', 'Shipped At', 'Delivered At'];
+                                const headers = ['Order ID', 'Date Placed', 'Customer', 'Phone', 'Items', 'Subtotal', 'Promo Discount', 'Delivery', 'Grand Total', 'Status', 'Coupon Code'];
                                 const rows = todayOrders.map(o => [
                                   o.id,
                                   new Date(o.timestamp).toLocaleDateString(),
                                   o.userName,
                                   o.userPhone,
                                   o.items.map(i => `${i.name} (${i.quantity})`).join('; '),
+                                  o.totalAmount + (o.discountApplied || 0) - (o.deliveryCharge || 0),
+                                  o.discountApplied || 0,
+                                  o.deliveryCharge || 0,
                                   o.totalAmount,
                                   o.status,
-                                  o.shippedAt ? new Date(Number(o.shippedAt)).toLocaleString() : 'N/A',
-                                  o.deliveredAt ? new Date(Number(o.deliveredAt)).toLocaleString() : 'N/A'
+                                  coupons.find(c => c.id === o.couponId)?.code || 'NONE'
                                 ]);
                                 const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
                                 const encodedUri = encodeURI(csvContent);
@@ -588,6 +891,237 @@ const OwnerDashboard: React.FC = () => {
               <button onClick={sendNotification} className="w-full bg-slate-900 text-white py-5 rounded-[2.5rem] font-black uppercase text-sm tracking-[0.2em] shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all hover:bg-black">
                 <Send size={18} /> Deploy Notification
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW: OFFERS (COUPONS) */}
+        {view === 'offers' && (
+          <div className="space-y-8">
+            <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="bg-indigo-600 p-4 rounded-[2rem] text-white shadow-xl rotate-3"><Sparkles size={24} /></div>
+                <div>
+                  <h3 className="text-xl font-black italic uppercase">Create New Offer</h3>
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mt-1">Growth Mechanics Engine</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black uppercase text-slate-400 px-2 tracking-widest">Promo Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. WELCOME50"
+                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black uppercase tracking-widest outline-none focus:border-indigo-600 transition-all font-sans"
+                    value={newCoupon.code}
+                    onChange={e => setNewCoupon({ ...newCoupon, code: e.target.value.toUpperCase() })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black uppercase text-slate-400 px-2 tracking-widest">Type</label>
+                  <select
+                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black outline-none"
+                    value={newCoupon.discountType}
+                    onChange={e => setNewCoupon({ ...newCoupon, discountType: e.target.value as any })}
+                  >
+                    <option value="FIXED">Flat Discount (₹)</option>
+                    <option value="PERCENT">Percentage (%)</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black uppercase text-slate-400 px-2 tracking-widest">Value</label>
+                  <input
+                    type="number"
+                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black outline-none"
+                    value={newCoupon.discountValue}
+                    onChange={e => setNewCoupon({ ...newCoupon, discountValue: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black uppercase text-slate-400 px-2 tracking-widest">Min Order</label>
+                  <input
+                    type="number"
+                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black outline-none"
+                    value={newCoupon.minOrderValue}
+                    onChange={e => setNewCoupon({ ...newCoupon, minOrderValue: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black uppercase text-slate-400 px-2 tracking-widest">Total Usage</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 100"
+                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black outline-none focus:border-indigo-600 transition-all"
+                    value={newCoupon.usageLimit}
+                    onChange={e => setNewCoupon({ ...newCoupon, usageLimit: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black uppercase text-slate-400 px-2 tracking-widest">Limit/Person</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 5"
+                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black outline-none focus:border-blue-500 transition-all"
+                    value={newCoupon.userUsageLimit}
+                    onChange={e => setNewCoupon({ ...newCoupon, userUsageLimit: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="flex items-end pb-1.5">
+                  <button
+                    onClick={handleCreateCoupon}
+                    className="w-full bg-slate-950 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl hover:bg-black active:scale-95 transition-all"
+                  >
+                    Deploy Offer
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-8 pt-8 border-t border-slate-50">
+                <label className="text-[10px] font-black uppercase text-indigo-400 px-2 tracking-[0.2em] block mb-4 italic">Target Specific Products (Optional)</label>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => setNewCoupon({ ...newCoupon, applicableProducts: [] })}
+                    className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2
+                      ${newCoupon.applicableProducts.length === 0
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg'
+                        : 'bg-white border-slate-100 text-slate-400 hover:border-indigo-200'
+                      }`}
+                  >
+                    All Products
+                  </button>
+                  {products.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        const next = new Set(newCoupon.applicableProducts);
+                        if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+                        setNewCoupon({ ...newCoupon, applicableProducts: Array.from(next) });
+                      }}
+                      className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2
+                        ${newCoupon.applicableProducts.includes(p.id)
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg'
+                          : 'bg-white border-slate-100 text-slate-400 hover:border-indigo-200'
+                        }`}
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[9px] font-bold text-slate-400 mt-4 uppercase tracking-widest px-1 italic">
+                  {newCoupon.applicableProducts.length === 0
+                    ? "This coupon will be valid for ALL items in the user's cart."
+                    : `This coupon will ONLY apply to the ${newCoupon.applicableProducts.length} selected product(s).`}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden">
+              <div className="p-8 border-b border-slate-100 flex justify-between items-center">
+                <h3 className="text-xl font-black uppercase tracking-tight italic">Active Promotions</h3>
+                <span className="bg-slate-50 text-slate-400 text-[10px] font-black px-4 py-1.5 rounded-full border uppercase tracking-widest">{coupons.length} Mechanics Deployed</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="px-8 py-5">Code</th>
+                      <th className="px-8 py-5">Benefit</th>
+                      <th className="px-8 py-5">Min Order</th>
+                      <th className="px-8 py-5">Global Usage</th>
+                      <th className="px-8 py-5">Limit/Person</th>
+                      <th className="px-8 py-5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {coupons.map(c => (
+                      <tr key={c.id} className="hover:bg-indigo-50/30 transition-colors">
+                        <td className="px-8 py-6">
+                          <span className="bg-white border-2 border-slate-100 px-4 py-2 rounded-xl font-black text-indigo-600 tracking-widest shadow-sm font-sans">{c.code}</span>
+                        </td>
+                        <td className="px-8 py-6 font-black text-slate-900">
+                          {c.discountType === 'FIXED' ? `₹${c.discountValue} OFF` : `${c.discountValue}% OFF`}
+                          {c.applicableProducts && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {(() => {
+                                try {
+                                  const list = typeof c.applicableProducts === 'string' ? JSON.parse(c.applicableProducts) : c.applicableProducts;
+                                  if (!list || list.length === 0) return null;
+                                  return list.map((pid: string) => (
+                                    <span key={pid} className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded text-[8px] font-black uppercase border border-indigo-100">
+                                      {products.find(p => p.id === pid)?.name || pid}
+                                    </span>
+                                  ));
+                                } catch (e) { return null; }
+                              })()}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-8 py-6 font-bold text-slate-500 italic">₹{c.minOrderValue || 0}</td>
+                        <td className="px-8 py-6">
+                          {editingCoupon?.id === c.id ? (
+                            <div className="flex flex-col gap-2">
+                              <input
+                                type="number"
+                                className="w-24 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                                value={editingCoupon.usageLimit}
+                                onChange={e => setEditingCoupon({ ...editingCoupon, usageLimit: Number(e.target.value) })}
+                              />
+                              <span className="text-[10px] text-slate-400">Current Total: {c.usageCount}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(100, (c.usageCount / (c.usageLimit || 100)) * 100)}%` }}></div>
+                              </div>
+                              <span className="text-[10px] font-black text-slate-400">{c.usageCount} {c.usageLimit > 0 && `/ ${c.usageLimit}`}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-8 py-6">
+                          {editingCoupon?.id === c.id ? (
+                            <input
+                              type="number"
+                              className="w-20 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                              value={editingCoupon.userUsageLimit}
+                              onChange={e => setEditingCoupon({ ...editingCoupon, userUsageLimit: Number(e.target.value) })}
+                            />
+                          ) : (
+                            <span className="bg-slate-50 px-3 py-1.5 rounded-full text-[10px] font-black uppercase text-slate-400 border border-slate-200">
+                              {c.userUsageLimit > 0 ? `${c.userUsageLimit} Times` : 'Unlimited'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-8 py-6 text-right">
+                          <div className="flex justify-end gap-2">
+                            {editingCoupon?.id === c.id ? (
+                              <>
+                                <button onClick={handleUpdateCoupon} className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl hover:bg-emerald-100 transition-all border border-emerald-100 shadow-sm"><CheckCircle size={16} /></button>
+                                <button onClick={() => setEditingCoupon(null)} className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-slate-100 transition-all border border-slate-100 shadow-sm"><X size={16} /></button>
+                              </>
+                            ) : (
+                              <>
+                                <button onClick={() => setEditingCoupon(c)} className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm"><Users size={16} /></button>
+                                <button onClick={() => deleteCoupon(c.id)} className="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-100 transition-all border border-rose-100 shadow-sm"><Trash2 size={16} /></button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {coupons.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-8 py-20 text-center">
+                          <div className="flex flex-col items-center gap-4 text-slate-400">
+                            <Sparkles size={40} className="opacity-20" />
+                            <p className="text-xs font-black uppercase tracking-widest">No promotions currently active</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
