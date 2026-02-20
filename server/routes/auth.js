@@ -110,17 +110,20 @@ router.post('/verify-otp', async (req, res) => {
         const record = rows[0];
 
         if (!record) return res.status(400).json({ error: 'No OTP record found' });
-        if (Date.now() > record.expiresAt) return res.status(400).json({ error: 'OTP expired' });
+
+        const expiresAt = record.expiresAt || record.expiresat;
+        if (Date.now() > expiresAt) return res.status(400).json({ error: 'OTP expired' });
 
         const testNumbers = ['1111111111', '2222222222', '3333333333', '9999999999'];
+        const vId = record.verificationId || record.verificationid;
 
         // Message Central Validation
-        if (record.verificationId && MC_API_KEY && !testNumbers.includes(phone)) {
+        if (vId && MC_API_KEY && !testNumbers.includes(phone)) {
             try {
                 const authToken = await getMCAuthToken();
                 if (authToken) {
-                    const validateUrl = `https://cpaas.messagecentral.com/verification/v3/validateOtp?customerId=${MC_CUSTOMER_ID}&verificationId=${record.verificationId}&code=${otp}`;
-                    console.log('[MC VALIDATE] Calling Validation API...', { verificationId: record.verificationId, phone });
+                    const validateUrl = `https://cpaas.messagecentral.com/verification/v3/validateOtp?customerId=${MC_CUSTOMER_ID}&verificationId=${vId}&code=${otp}`;
+                    console.log('[MC VALIDATE] Calling Validation API...', { verificationId: vId, phone });
                     const response = await axios.get(validateUrl, {
                         headers: { 'authToken': authToken }
                     });
@@ -144,7 +147,7 @@ router.post('/verify-otp', async (req, res) => {
             }
         } else {
             // Local check fallback (Test numbers or if MC not configured)
-            console.log('[LOCAL VALIDATE] Checking OTP locally');
+            console.log('[LOCAL VALIDATE] Checking OTP locally', { phone, expected: record.otp, provided: otp });
             if (record.otp !== otp) {
                 console.log('[LOCAL VALIDATE] FAILED - OTP mismatch');
                 return res.status(400).json({ error: 'Invalid OTP' });
