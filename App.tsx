@@ -51,6 +51,7 @@ const AreaSelectorRoute = () => {
       // Redirect based on role
       if (user.role === AppRole.ADMIN) navigate('/admin');
       else if (user.role === AppRole.AGENT) navigate('/delivery');
+      else if (user.role === AppRole.OWNER) navigate('/owner');
       else navigate('/dashboard');
     } catch (err) {
       console.error('Failed to set district', err);
@@ -58,6 +59,25 @@ const AreaSelectorRoute = () => {
   };
 
   return <AreaSelector onSelect={handleDistrictSelect} user={user} />;
+};
+
+const RootRedirect = () => {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) return <div className="flex bg-white h-screen items-center justify-center">Loading...</div>;
+  if (!user) return <Navigate to="/login" />;
+
+  // Special case: If user has a role but no district yet (and is not an owner), send to selector
+  if (user.role !== AppRole.OWNER && !user.district) {
+    return <Navigate to="/select-area" />;
+  }
+
+  // Role-based routing
+  if (user.role === AppRole.OWNER) return <Navigate to="/owner" />;
+  if (user.role === AppRole.ADMIN) return <Navigate to="/admin" />;
+  if (user.role === AppRole.AGENT) return <Navigate to="/delivery" />;
+
+  return <Navigate to="/dashboard" />;
 };
 
 const App: React.FC = () => {
@@ -78,7 +98,7 @@ const App: React.FC = () => {
           <Route path="/delivery" element={<PrivateRoute role={AppRole.AGENT}><DeliveryAgent /></PrivateRoute>} />
           <Route path="/owner" element={<PrivateRoute role={AppRole.OWNER}><OwnerDashboard /></PrivateRoute>} />
 
-          <Route path="/" element={<Navigate to="/dashboard" />} />
+          <Route path="/" element={<RootRedirect />} />
           <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
       </Router>
