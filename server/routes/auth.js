@@ -6,24 +6,23 @@ const axios = require('axios');
 
 const SECRET_KEY = process.env.JWT_SECRET || 'aqua_secret_key_123';
 
-// MSG91 OTP CONFIGURATION
-const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY;
-const MSG91_TEMPLATE_ID = process.env.MSG91_TEMPLATE_ID;
+// MESSAGE CENTRAL CONFIGURATION (VerifyNow)
+const MC_CUSTOMER_ID = process.env.MESSAGE_CENTRAL_CUSTOMER_ID || 'C-320A86CF83604B9';
+const MC_API_KEY = process.env.MESSAGE_CENTRAL_API_KEY; // Base-64 encrypted password
 
-const sendMSG91OTP = async (phone, otp) => {
-    if (!MSG91_AUTH_KEY || !MSG91_TEMPLATE_ID) {
-        console.error('[MSG91] AUTH_KEY or TEMPLATE_ID MISSING');
-        return false;
+const getMCAuthToken = async () => {
+    if (!MC_API_KEY) {
+        console.log('[MC] API KEY MISSING in environment variables');
+        return null;
     }
     try {
-        const url = `https://api.msg91.com/api/v5/otp?template_id=${MSG91_TEMPLATE_ID}&mobile=91${phone}&authkey=${MSG91_AUTH_KEY}&otp=${otp}`;
-        console.log('[MSG91] Sending OTP to:', phone);
-        const response = await axios.get(url);
-        console.log('[MSG91] Response:', response.data);
-        return response.data.type === 'success';
+        console.log('[MC] Requesting Auth Token for Customer:', MC_CUSTOMER_ID);
+        const response = await axios.get(`https://cpaas.messagecentral.com/auth/v1/authentication/token?customerId=${MC_CUSTOMER_ID}&key=${MC_API_KEY}&scope=NEW`);
+        console.log('[MC] Auth Token Response:', response.data);
+        return response.data?.token;
     } catch (err) {
-        console.error('[MSG91] ERROR:', err.response?.data || err.message);
-        return false;
+        console.error('MC TOKEN ERROR:', err.response?.data || err.message);
+        return null;
     }
 };
 
@@ -41,12 +40,32 @@ router.post('/send-otp', async (req, res) => {
 
         const testNumbers = ['1111111111', '2222222222', '3333333333', '9999999999'];
 
-        // MSG91 Integration
-        if (MSG91_AUTH_KEY && !testNumbers.includes(phone)) {
-            otp = Math.floor(100000 + Math.random() * 900000).toString();
-            const success = await sendMSG91OTP(phone, otp);
-            if (!success) {
-                console.log('[MSG91] FAILED TO SEND OTP');
+        // Message Central Integration
+        if (MC_API_KEY && !testNumbers.includes(phone)) {
+            try {
+                const authToken = await getMCAuthToken();
+                if (authToken) {
+                    const sendUrl = 'https://cpaas.messagecentral.com/verification/v3/send';
+                    console.log('[MC] Sending OTP to:', phone);
+                    const response = await axios.post(sendUrl, null, {
+                        params: {
+                            countryCode: '91',
+                            customerId: MC_CUSTOMER_ID,
+                            mobileNumber: phone,
+                            flowType: 'SMS',
+                            otpLength: '6'
+                            // Let Message Central generate the OTP
+                        },
+                        headers: { 'authToken': authToken }
+                    });
+                    console.log('[MC] Send API Response:', JSON.stringify(response.data, null, 2));
+                    verificationId = response.data?.data?.verificationId || response.data?.verificationId;
+                    console.log('[MC] Extracted VerificationId:', verificationId);
+                } else {
+                    console.log('[MC] FAILED TO GET AUTH TOKEN - Check your CustomerID and Key');
+                }
+            } catch (err) {
+                console.error('MC SEND ERROR:', JSON.stringify(err.response?.data || err.message, null, 2));
             }
         } else {
             // Test number fallback
@@ -86,13 +105,36 @@ router.post('/verify-otp', async (req, res) => {
 
         const testNumbers = ['1111111111', '2222222222', '3333333333', '9999999999'];
 
-        // Local check for ALL (Since we generate OTP locally now and store it in DB for MSG91 too)
-        console.log('[OTP VALIDATE] Checking OTP in DB');
-        if (record.otp !== otp) {
-            console.log('[OTP VALIDATE] FAILED - OTP mismatch');
-            return res.status(400).json({ error: 'Invalid OTP' });
+        // Message Central Validation
+        if (record.verificationId && MC_API_KEY && !testNumbers.includes(phone)) {
+            try {
+                const authToken = await getMCAuthToken();
+                if (authToken) {
+                    const validateUrl = `https://cpaas.messagecentral.com/verification/v3/validateOtp?customerId=${MC_CUSTOMER_ID}&verificationId=${record.verificationId}&code=${otp}`;
+                    console.log('[MC VALIDATE] Calling:', validateUrl);
+                    const response = await axios.get(validateUrl, {
+                        headers: { 'authToken': authToken }
+                    });
+
+                    // Message Central response check
+                    if (response.data?.responseCode !== 200) {
+                        return res.status(400).json({ error: response.data?.message || 'Invalid OTP' });
+                    }
+                }
+            } catch (err) {
+                console.error('[MC VALIDATE] ERROR:', JSON.stringify(err.response?.data || err.message, null, 2));
+                // Fallback to internal check if API fails? No, for strictness we should fail unless verified
+                return res.status(400).json({ error: 'OTP Verification failed via service' });
+            }
+        } else {
+            // Local check fallback (Test numbers or if MC not configured)
+            console.log('[LOCAL VALIDATE] Checking OTP locally');
+            if (record.otp !== otp) {
+                console.log('[LOCAL VALIDATE] FAILED - OTP mismatch');
+                return res.status(400).json({ error: 'Invalid OTP' });
+            }
+            console.log('[LOCAL VALIDATE] SUCCESS');
         }
-        console.log('[OTP VALIDATE] SUCCESS');
 
         // OTP Valid! Cleanup
         await db.query("DELETE FROM otp_verifications WHERE phone = $1", [phone]);
