@@ -60,12 +60,21 @@ router.post('/send-otp', async (req, res) => {
                     });
                     console.log('[MC] Send API Response:', JSON.stringify(response.data, null, 2));
                     verificationId = response.data?.data?.verificationId || response.data?.verificationId;
-                    console.log('[MC] Extracted VerificationId:', verificationId);
+
+                    if (!verificationId) {
+                        console.error('[MC] ERROR: No VerificationId in response!', response.data);
+                    } else {
+                        console.log('[MC] Successfully obtained VerificationId:', verificationId);
+                    }
                 } else {
                     console.log('[MC] FAILED TO GET AUTH TOKEN - Check your CustomerID and Key');
                 }
             } catch (err) {
-                console.error('MC SEND ERROR:', JSON.stringify(err.response?.data || err.message, null, 2));
+                console.error('MC SEND ERROR Details:', {
+                    status: err.response?.status,
+                    data: err.response?.data,
+                    message: err.message
+                });
             }
         } else {
             // Test number fallback
@@ -111,19 +120,26 @@ router.post('/verify-otp', async (req, res) => {
                 const authToken = await getMCAuthToken();
                 if (authToken) {
                     const validateUrl = `https://cpaas.messagecentral.com/verification/v3/validateOtp?customerId=${MC_CUSTOMER_ID}&verificationId=${record.verificationId}&code=${otp}`;
-                    console.log('[MC VALIDATE] Calling:', validateUrl);
+                    console.log('[MC VALIDATE] Calling Validation API...', { verificationId: record.verificationId, phone });
                     const response = await axios.get(validateUrl, {
                         headers: { 'authToken': authToken }
                     });
 
+                    console.log('[MC VALIDATE] Response Data:', JSON.stringify(response.data, null, 2));
+
                     // Message Central response check
                     if (response.data?.responseCode !== 200) {
+                        console.warn('[MC VALIDATE] FAILED:', response.data?.message || 'Invalid OTP');
                         return res.status(400).json({ error: response.data?.message || 'Invalid OTP' });
                     }
+                    console.log('[MC VALIDATE] SUCCESS for:', phone);
                 }
             } catch (err) {
-                console.error('[MC VALIDATE] ERROR:', JSON.stringify(err.response?.data || err.message, null, 2));
-                // Fallback to internal check if API fails? No, for strictness we should fail unless verified
+                console.error('[MC VALIDATE] CRITICAL ERROR:', {
+                    status: err.response?.status,
+                    data: err.response?.data,
+                    message: err.message
+                });
                 return res.status(400).json({ error: 'OTP Verification failed via service' });
             }
         } else {
